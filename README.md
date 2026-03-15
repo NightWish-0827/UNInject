@@ -288,6 +288,4 @@ architecture capable of supporting even the most demanding mobile or AAA workloa
 
 **High performance injection should be invisible.**
 
-UNInject makes that possible.
-
 ---
