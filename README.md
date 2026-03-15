@@ -16,7 +16,7 @@ Unlike conventional DI systems that rely heavily on runtime `FindObjectsOfType` 
 UNInject provides a **fully engineered injection architecture** focused on
 **performance**, **deterministic resolution**, and **developer usability**.
 
-
+[upm link image]
 
 `https://github.com/NightWish-0827/UNInject.git?path=/com.nightwishlab.uninject`  
 UPM Add package from git URL
@@ -118,7 +118,6 @@ Services are registered into the framework using referral attributes.
 ```csharp
 [Referral(typeof(IInputService))]
 public class DesktopInputManager : MonoBehaviour, IInputService { }
-
 ```
 
 The provider attributes guarantee:
@@ -150,7 +149,6 @@ public class PlayerController : MonoBehaviour
     // Resolved at runtime from SceneInstaller
     [SceneInject(optional: true)] private LevelManager _level;
 }
-
 ```
 
 This design ensures that **the exact origin and lifetime of a dependency** is instantly recognizable
@@ -193,7 +191,6 @@ Step 3: Object Injection [Order: -500]
 ObjectInstaller.Awake()
 → Collect all [GlobalInject] and [SceneInject] targets
 → Execute pre-compiled lambda setters
-
 ```
 
 ---
@@ -212,7 +209,6 @@ var handle = PowerPool.Spawn(enemyPrefab).Rent();
 
 // 2. Inject runtime dependencies instantly
 ObjectInstaller.Instance.InjectTarget(handle.Instance);
-
 ```
 
 Because the `InjectTarget` method leverages the same `TypeDataCache` architecture,
@@ -238,8 +234,9 @@ In contrast, UNInject's **TypeDataCache** compiles an expression tree once per t
 ```csharp
 var assign = Expression.Assign(Expression.Field(typedTarget, field), typedValue);
 var lambda = Expression.Lambda<Action<object, object>>(assign, targetParam, valueParam);
-
 ```
+
+[perform images space] 
 
 This compiled lambda executes at the speed of native C# code.
 Once cached, injecting 10,000 objects takes microseconds, preventing the GC spikes (frame drops) that occur during complex UI or level instantiation.
