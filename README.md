@@ -25,13 +25,13 @@ UPM Add package from git URL
 
 # Table of Contents
 
-* [Core Features](https://www.google.com/search?q=%23core-features)
-* [API Reference & Usage](https://www.google.com/search?q=%23api-reference--usage)
-* [Lifecycle & Internal Architecture](https://www.google.com/search?q=%23lifecycle--internal-architecture)
-* [Dynamic Object Support](https://www.google.com/search?q=%23dynamic-object-support)
-* [Performance Comparison](https://www.google.com/search?q=%23performance-comparison)
-* [Editor Supports](https://www.google.com/search?q=%23editor-supports)
-* [Editor Case](https://www.google.com/search?q=%23editor-case)
+* [Core Features](#core-features)
+* [API Reference & Usage](#api-reference--usage)
+* [Lifecycle & Internal Architecture](#lifecycle--internal-architecture)
+* [Dynamic Object Support](#dynamic-object-support)
+* [Performance Comparison](#performance-comparison)
+* [Editor Supports](#editor-supports)
+* [Editor Case](#editor-case)
 
 ---
 
