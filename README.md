@@ -16,7 +16,7 @@ Unlike conventional DI systems that rely heavily on runtime `FindObjectsOfType` 
 UNInject provides a **fully engineered injection architecture** focused on
 **performance**, **deterministic resolution**, and **developer usability**.
 
-[upm link image]
+<img width="797" height="86" alt="Image" src="https://github.com/user-attachments/assets/fbba5f3c-6803-41bc-84b9-3ecf957ec7d0" />
 
 `https://github.com/NightWish-0827/UNInject.git?path=/com.nightwishlab.uninject`  
 UPM Add package from git URL
@@ -236,7 +236,7 @@ var assign = Expression.Assign(Expression.Field(typedTarget, field), typedValue)
 var lambda = Expression.Lambda<Action<object, object>>(assign, targetParam, valueParam);
 ```
 
-[perform images space] 
+<img width="800" height="600" alt="Image" src="https://github.com/user-attachments/assets/964a75dc-0a7d-4c7c-9455-bec0fb48e0bd" />  
 
 This compiled lambda executes at the speed of native C# code.
 Once cached, injecting 10,000 objects takes microseconds, preventing the GC spikes (frame drops) that occur during complex UI or level instantiation.
@@ -247,7 +247,11 @@ Once cached, injecting 10,000 objects takes microseconds, preventing the GC spik
 
 > Provide intuitive Inspector tools to manage and visualize dependency graphs.
 
-<img width="447" height="276" alt="Bake Button UI" src="[https://github.com/user-attachments/assets/579b2a3c-4eba-4977-8eb7-5bcac7c38541](https://github.com/user-attachments/assets/579b2a3c-4eba-4977-8eb7-5bcac7c38541)" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/84a1af2b-aa68-4722-ad2e-e9a15ed6c0de" width="32%">
+  <img src="https://github.com/user-attachments/assets/3858e28f-6332-4048-b80a-1bbcb7fa26d1" width="32%">
+  <img src="https://github.com/user-attachments/assets/a9e36b9f-7d35-416c-a5e8-145f13e5ef59" width="32%">
+</p>  
 
 UNInject features the `AttributeButton` extension, bringing a highly visual diagnostic panel to the `ObjectInstaller`.
 
@@ -269,6 +273,8 @@ This is the safety net from the `MasterInstallerPlayModeGuard`, **so it is funct
 
 However, if this occurs, you must ensure you have baked the registry. The system will gracefully fallback to null injection to prevent crashes, but your dependencies will not be met.
 
+---
+
 ### In a word...
 
 UNInject is not just another bulky IoC container.
@@ -283,3 +289,5 @@ architecture capable of supporting even the most demanding mobile or AAA workloa
 **High performance injection should be invisible.**
 
 UNInject makes that possible.
+
+---
