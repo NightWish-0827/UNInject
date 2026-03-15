@@ -1,0 +1,10 @@
+{
+  "name": "com.nightwishlab.uninject",
+  "version": "1.0.0",
+  "displayName": "UNInject",
+  "description": "Dependency Injection System Utilizing Unity's Serialization",
+  "unity": "2021.3",
+  "author": {
+    "name": "NightWish"
+  }
+}
