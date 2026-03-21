@@ -9,11 +9,11 @@ using UnityEditor;
 
 /// <summary>
 /// 현재 씬 범위에서만 유효한 Manager Layer([SceneReferral])를
-/// 전역처럼 제공하는 씬 전용 레지스트리입니다.
+/// 전역처럼 제공하는 씬 전용 레지스트리.
 /// 
 /// - MasterInstaller 가 게임 전체 전역 매니저를 담당한다면,
-///   SceneInstaller 는 해당 씬 한정 매니저를 담당합니다.
-/// - DontDestroyOnLoad 를 사용하지 않으므로, 씬 전환 시 함께 교체됩니다.
+///   SceneInstaller 는 해당 씬 한정 매니저를 담당함.
+/// - DontDestroyOnLoad 를 사용하지 않으므로, 씬 전환 시 함께 교체.
 /// </summary>
 [DefaultExecutionOrder(-900)]
 public class SceneInstaller : MonoBehaviour
@@ -25,7 +25,7 @@ public class SceneInstaller : MonoBehaviour
     private readonly Dictionary<Type, Component> _sceneRegistry = new Dictionary<Type, Component>();
 
     // 에디터에서 BakeUp 되는 씬 전용 Manager Layer 목록 (디버그용)
-    [SerializeField, Tooltip("이 씬에서 [SceneReferral] 이 붙은 Manager Layer 컴포넌트들 (Refresh Scene Registry로 자동 채움, 읽기 전용)")]
+    [SerializeField, Tooltip("The list of Manager Layer components with [SceneReferral] on the scene (automatically filled by Refresh Scene Registry, read-only)")]
     private List<Component> _sceneReferrals = new List<Component>();
 
     private void Awake()
@@ -53,7 +53,7 @@ public class SceneInstaller : MonoBehaviour
 
     /// <summary>
     /// 에디터에서 BakeUp 된 _sceneReferrals 리스트를 기반으로
-    /// 런타임 씬 전역 레지스트리(Type -> Component)를 재구성합니다.
+    /// 런타임 씬 전역 레지스트리(Type -> Component)를 재구성함함.
     /// </summary>
     private void RebuildSceneRegistry()
     {
@@ -67,7 +67,7 @@ public class SceneInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 하나의 컴포넌트를 다음 타입 키들로 레지스트리에 등록합니다.
+    /// 하나의 컴포넌트를 다음 타입 키들로 레지스트리에 등록함함
     /// - 자기 자신(구체 타입)
     /// - 구현한 인터페이스들
     /// - 상속 체인의 베이스 타입들(너무 광범위한 Unity 공통 베이스는 제외)
@@ -127,6 +127,7 @@ public class SceneInstaller : MonoBehaviour
         }
     }
 
+//
     private static bool IsMappableAbstraction(Type type)
     {
         if (type == null)
@@ -171,9 +172,6 @@ public class SceneInstaller : MonoBehaviour
         registry[key] = value;
     }
 
-    /// <summary>
-    /// 씬 전역 레지스트리에서 타입에 해당하는 컴포넌트를 반환합니다.
-    /// </summary>
     public Component Resolve(Type type)
     {
         if (type == null) return null;
@@ -203,10 +201,6 @@ public class SceneInstaller : MonoBehaviour
         return component != null;
     }
 
-    /// <summary>
-    /// 인터페이스/추상 타입을 포함해 조회 가능한 헬퍼.
-    /// 예) var input = SceneInstaller.Instance.ResolveAs&lt;IPlayerInput&gt;();
-    /// </summary>
     public T ResolveAs<T>() where T : class
     {
         return Resolve(typeof(T)) as T;
@@ -219,10 +213,6 @@ public class SceneInstaller : MonoBehaviour
     }
 
 #if UNITY_EDITOR
-    /// <summary>
-    /// 에디터(PlayMode 아님)에서 현재 씬의 [SceneReferral] 컴포넌트들을 스캔하여
-    /// _sceneReferrals 리스트를 갱신하고, 그 결과로 씬 레지스트리를 재구성합니다.
-    /// </summary>
     [ContextMenu("Refresh Scene Registry")]
     public void RefreshSceneRegistry()
     {
@@ -230,7 +220,6 @@ public class SceneInstaller : MonoBehaviour
 
         var currentScene = gameObject.scene;
 
-        // 씬 내 모든 컴포넌트 스캔 (비활성 포함)
         var allComponents = Resources.FindObjectsOfTypeAll<Component>()
             .Where(c => c.gameObject.scene == currentScene)
             .Where(c => c.gameObject.hideFlags == HideFlags.None);

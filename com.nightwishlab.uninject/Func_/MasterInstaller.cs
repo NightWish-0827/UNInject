@@ -9,13 +9,13 @@ using UnityEditor;
 
 /// <summary>
 /// Manager Layer 컴포넌트들( [Referral] )을 전역 레지스트리로 관리하고,
-/// 런타임에는 Resolve API 를 통해 전역 의존성을 제공하는 싱글톤입니다.
+/// 런타임에는 Resolve API 를 통해 전역 의존성을 제공하는 싱글톤.
 /// 
 /// - 에디터: RefreshRegistry() 로 현재 씬의 매니저 목록을 스캔하여
 ///           _globalReferrals (직렬화 리스트)에 BakeUp
 /// - 런타임: Bake된 _globalReferrals 를 기반으로 딕셔너리를 구성하고 Resolve() 로 조회
 /// 
-/// ※ 런타임에서는 MonoBehaviour 전체 순회를 하지 않습니다.
+/// ※ 런타임에서는 MonoBehaviour 전체 순회를 하지 않음.
 ///    (전역 매니저 목록은 에디터에서 미리 Bake 된 결과만 사용)
 /// </summary>
 [DefaultExecutionOrder(-1000)]
@@ -43,7 +43,7 @@ public class MasterInstaller : MonoBehaviour
     private readonly Dictionary<Type, Component> _runtimeRegistry = new Dictionary<Type, Component>();
 
     // 에디터에서 BakeUp 되는 Manager Layer 목록 (읽기 전용 직렬화 필드)
-    [SerializeField, Tooltip("씬에서 [Referral] 이 붙은 Manager Layer 컴포넌트들 (Refresh Global Registry로 자동 채움, 읽기 전용)")]
+    [SerializeField, Tooltip("The list of Manager Layer components with [Referral] on the scene (automatically filled by Refresh Global Registry, read-only)")]
     private List<Component> _globalReferrals = new List<Component>();
 
     // 최초 씬이 로드되기 직전에 레지스트리 구성
@@ -108,7 +108,7 @@ public class MasterInstaller : MonoBehaviour
 
     /// <summary>
     /// 에디터에서 BakeUp 된 _globalReferrals 리스트를 기반으로
-    /// 런타임 전역 레지스트리(Type -> Component)를 재구성합니다.
+    /// 런타임 전역 레지스트리(Type -> Component)를 재구성함.
     /// </summary>
     private void RebuildRuntimeRegistry()
     {
@@ -122,7 +122,7 @@ public class MasterInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 하나의 컴포넌트를 다음 타입 키들로 레지스트리에 등록합니다.
+    /// 하나의 컴포넌트를 다음 타입 키들로 레지스트리에 등록함.
     /// - 자기 자신(구체 타입)
     /// - 구현한 인터페이스들
     /// - 상속 체인의 베이스 타입들(너무 광범위한 Unity 공통 베이스는 제외)
@@ -224,8 +224,8 @@ public class MasterInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 런타임 전역 레지스트리에서 타입에 해당하는 컴포넌트를 반환합니다.
-    /// 필요 시 한 번 더 레지스트리를 재구성하여 안전망을 제공합니다.
+    /// 런타임 전역 레지스트리에서 타입에 해당하는 컴포넌트를 반환함.
+    /// 필요 시 한 번 더 레지스트리를 재구성하여 안전망을 제공함.
     /// </summary>
     public Component Resolve(Type type)
     {
@@ -281,8 +281,8 @@ public class MasterInstaller : MonoBehaviour
 #if UNITY_EDITOR
     /// <summary>
     /// 에디터(PlayMode 아님)에서 현재 씬의 [Referral] 컴포넌트들을 스캔하여
-    /// _globalReferrals 리스트를 갱신하고, 그 결과로 런타임 레지스트리를 재구성합니다.
-    /// ObjectInstaller.BakeDependencies 에서도 호출될 수 있습니다.
+    /// _globalReferrals 리스트를 갱신하고, 그 결과로 런타임 레지스트리를 재구성.
+    /// ObjectInstaller.BakeDependencies 에서도 호출될 수 있음.
     /// </summary>
     [ContextMenu("Refresh Global Registry")]
     public void RefreshRegistry()
@@ -331,7 +331,7 @@ public class MasterInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 에디터 Bake 용 헬퍼: 타입에 맞는 Manager 컴포넌트를 반환합니다.
+    /// 에디터 Bake 용 헬퍼: 타입에 맞는 Manager 컴포넌트를 반환함.
     /// (내부적으로 Resolve 를 사용)
     /// </summary>
     public Component GetGlobalComponent(Type type)

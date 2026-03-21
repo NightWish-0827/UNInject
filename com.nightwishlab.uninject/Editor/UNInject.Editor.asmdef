@@ -2,7 +2,7 @@
     "name": "UNInject.Editor",
     "rootNamespace": "",
     "references": [
-        "GUID:323d25233417de440bf54a6b38ab99bf"
+        "GUID:fcf6b30e1ffecdd48b413ed1ac10aa43"
     ],
     "includePlatforms": [
         "Editor"

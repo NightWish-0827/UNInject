@@ -5,7 +5,7 @@ using System.Reflection;
 
 /// <summary>
 /// 특정 루트 GameObject 에 붙어서,
-/// 그 자식 계층 내부의 의존성을 관리하는 컴포넌트입니다.
+/// 그 자식 계층 내부의 의존성을 관리하는 컴포넌트.
 /// 
 /// - [Inject]       : 같은 루트 계층 내의 컴포넌트를 찾아 에디터에서 베이크
 /// - [GlobalInject] : MasterInstaller 가 관리하는 Manager Layer 컴포넌트를 런타임에 주입
@@ -23,7 +23,7 @@ public class ObjectInstaller : MonoBehaviour
     /// <summary>
     /// 이 ObjectInstaller 를 루트로 하는 계층 내부에서
     /// [SceneInject], [GlobalInject] 필드를 가진 컴포넌트에
-    /// 씬 전용 / 전역 Manager 를 주입합니다.
+    /// 씬 전용 / 전역 Manager 를 주입함.
     /// </summary>
     private void InjectGlobalDependencies()
     {
@@ -36,9 +36,9 @@ public class ObjectInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 외부에서 동적으로 생성/풀링된 MonoBehaviour 에도 직접 주입할 수 있는 수동 주입 API 입니다.
-    /// - PowerPool 같은 외부 풀링 시스템에서 Spawn 시점에 호출하기 좋습니다.
-    /// - ObjectInstaller 계층 전체 스캔 로직(Awake)을 분리해 재사용합니다.
+    /// 외부에서 동적으로 생성/풀링된 MonoBehaviour 에도 직접 주입할 수 있는 수동 주입 API.
+    /// - PowerPool 같은 외부 풀링 시스템에서 Spawn 시점에 호출하기 좋음.
+    /// - ObjectInstaller 계층 전체 스캔 로직(Awake)을 분리해 재사용함.
     /// </summary>
     public void InjectTarget(MonoBehaviour target)
     {
@@ -46,8 +46,8 @@ public class ObjectInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 주입 성공/실패를 반환하는 수동 주입 API 입니다.
-    /// - 풀링/런타임 생성 흐름에서 경고 로그를 제어하기 위해 Try 형태를 제공합니다.
+    /// 주입 성공/실패를 반환하는 수동 주입 API.
+    /// - 풀링/런타임 생성 흐름에서 경고 로그를 제어하기 위해 Try 형태를 제공함.
     /// </summary>
     public bool TryInjectTarget(MonoBehaviour target, bool logWarnings = true)
     {
@@ -114,8 +114,8 @@ public class ObjectInstaller : MonoBehaviour
     }
 
     /// <summary>
-    /// 특정 루트(GameObject) 하위 계층 전체에 대해 주입을 수행합니다.
-    /// - 외부 풀링 시스템이 Spawn 결과로 루트 GameObject 를 반환하는 경우에 유용합니다.
+    /// 특정 루트(GameObject) 하위 계층 전체에 대해 주입을 수행함.
+    /// - 외부 풀링 시스템이 Spawn 결과로 루트 GameObject 를 반환하는 경우에 유용함.
     /// </summary>
     public void InjectGameObject(GameObject root, bool includeInactive = true)
     {
@@ -136,7 +136,7 @@ public class ObjectInstaller : MonoBehaviour
     /// 이 ObjectInstaller 를 루트로 하는 계층 내부의 의존성을
     /// 1) 로컬 참조([Inject])는 에디터에서 실제 레퍼런스를 Bake 하고,
     /// 2) 전역 Manager 참조([GlobalInject])는 런타임 DI를 위해
-    ///    MasterInstaller 전역 레지스트리만 최신 상태로 갱신합니다.
+    ///    MasterInstaller 전역 레지스트리만 최신 상태로 갱신함.
     /// </summary>
     public void BakeDependencies()
     {

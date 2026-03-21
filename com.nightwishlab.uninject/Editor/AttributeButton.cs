@@ -12,7 +12,6 @@ public class ObjectInstallerEditor : Editor
     {
         ObjectInstaller installer = (ObjectInstaller)target;
 
-        // ---------------- Bake 버튼 ----------------
         GUI.backgroundColor = new Color(0.6f, 1f, 0.6f);
         if (GUILayout.Button("🍩 Bake Dependencies", GUILayout.Height(20)))
         {
@@ -20,12 +19,10 @@ public class ObjectInstallerEditor : Editor
         }
         GUI.backgroundColor = Color.white;
 
-        // ---------------- 참조 상태 시각화 ----------------
         DrawReferenceOverview(installer);
 
         EditorGUILayout.Space(8);
 
-        // m_Script를 숨기고 나머지 필드만 표시
         serializedObject.Update();
         var prop = serializedObject.GetIterator();
         bool enterChildren = true;
@@ -53,8 +50,8 @@ public class ObjectInstallerEditor : Editor
         int globalInjectFieldCount = 0;
 
         var localLines = new List<(bool linked, string text)>();
-        var sceneLines = new List<(bool inSceneRegistry, string text)>();
-        var globalLines = new List<(bool inRegistry, string text)>();
+        var sceneLines = new List<(bool inSceneRegistry, bool optional, string text)>();
+        var globalLines = new List<(bool inRegistry, bool optional, string text)>();
 
         foreach (var mb in monoBehaviours)
         {
@@ -99,9 +96,8 @@ public class ObjectInstallerEditor : Editor
                     bool optional = attr != null && attr.Optional;
 
                     string owner = mb.GetType().Name;
-                    string opt = optional ? " <color=#888888>(Optional)</color>" : string.Empty;
-                    string line = $"{owner}.{field.Name} : {field.FieldType.Name}{opt}";
-                    sceneLines.Add((inSceneRegistry, line));
+                    string line = $"{owner}.{field.Name} : {field.FieldType.Name}";
+                    sceneLines.Add((inSceneRegistry, optional, line));
                 }
                 else if (System.Attribute.IsDefined(field, typeof(GlobalInjectAttribute)))
                 {
@@ -112,9 +108,8 @@ public class ObjectInstallerEditor : Editor
                     bool optional = attr != null && attr.Optional;
 
                     string owner = mb.GetType().Name;
-                    string opt = optional ? " <color=#888888>(Optional)</color>" : string.Empty;
-                    string line = $"{owner}.{field.Name} : {field.FieldType.Name}{opt}";
-                    globalLines.Add((inRegistry, line));
+                    string line = $"{owner}.{field.Name} : {field.FieldType.Name}";
+                    globalLines.Add((inRegistry, optional, line));
                 }
             }
         }
@@ -132,7 +127,7 @@ public class ObjectInstallerEditor : Editor
         if (injectFieldCount == 0)
         {
             EditorGUILayout.LabelField(
-                "<i>이 루트 계층에서 [Inject] 필드를 가진 컴포넌트가 없습니다.</i>",
+                "<i>There are no components with the [Inject] field in this root layer.</i>",
                 new GUIStyle(EditorStyles.label) { richText = true });
         }
         else
@@ -141,21 +136,13 @@ public class ObjectInstallerEditor : Editor
                 $"<color=#7BD88F><b>{injectWiredCount}</b></color> / {injectFieldCount} fields linked",
                 new GUIStyle(EditorStyles.label) { richText = true });
 
-            int displayLimit = 6;
-            foreach (var (linked, text) in localLines.Take(displayLimit))
+            foreach (var (linked, text) in localLines)
             {
                 string bulletColor = linked ? "#7BD88F" : "#FFB374";
                 string status = linked ? "<color=#7BD88F>[OK]</color>" : "<color=#FF6B6B>[Missing]</color>";
                 EditorGUILayout.LabelField(
                     $"<color={bulletColor}>●</color> {text}  {status}",
                     new GUIStyle(EditorStyles.label) { richText = true });
-            }
-
-            if (localLines.Count > displayLimit)
-            {
-                EditorGUILayout.LabelField(
-                    $"… 그리고 <b>{localLines.Count - displayLimit}</b> 개 더",
-                    new GUIStyle(EditorStyles.miniLabel) { richText = true });
             }
         }
 
@@ -176,7 +163,7 @@ public class ObjectInstallerEditor : Editor
         if (sceneInjectFieldCount == 0)
         {
             EditorGUILayout.LabelField(
-                "<i>이 루트 계층에서 [SceneInject] 필드를 가진 컴포넌트가 없습니다.</i>",
+                "<i>There are no components with the [SceneInject] field in this root layer.</i>",
                 new GUIStyle(EditorStyles.label) { richText = true });
         }
         else
@@ -185,23 +172,30 @@ public class ObjectInstallerEditor : Editor
                 $"{sceneInjectFieldCount} fields require SceneInstaller managers",
                 new GUIStyle(EditorStyles.label) { richText = true });
 
-            int displayLimit = 6;
-            foreach (var (inSceneRegistry, text) in sceneLines.Take(displayLimit))
+            foreach (var (inSceneRegistry, optional, text) in sceneLines)
             {
-                string bulletColor = inSceneRegistry ? "#a6e3ff" : "#FFB374";
-                string status = inSceneRegistry
-                    ? "<color=#7BD88F>[Registered]</color>"
-                    : "<color=#FF6B6B>[Not in scene registry]</color>";
+                string bulletColor;
+                string status;
+
+                if (inSceneRegistry)
+                {
+                    bulletColor = "#a6e3ff";
+                    status = "<color=#7BD88F>[Registered]</color>";
+                }
+                else if (optional)
+                {
+                    bulletColor = "#888888";
+                    status = "<color=#888888>[Optional — not registered]</color>";
+                }
+                else
+                {
+                    bulletColor = "#FFB374";
+                    status = "<color=#FF6B6B>[Not in scene registry]</color>";
+                }
+
                 EditorGUILayout.LabelField(
                     $"<color={bulletColor}>●</color> {text}  {status}",
                     new GUIStyle(EditorStyles.label) { richText = true });
-            }
-
-            if (sceneLines.Count > displayLimit)
-            {
-                EditorGUILayout.LabelField(
-                    $"… 그리고 <b>{sceneLines.Count - displayLimit}</b> 개 더",
-                    new GUIStyle(EditorStyles.miniLabel) { richText = true });
             }
         }
 
@@ -222,7 +216,7 @@ public class ObjectInstallerEditor : Editor
         if (globalInjectFieldCount == 0)
         {
             EditorGUILayout.LabelField(
-                "<i>이 루트 계층에서 [GlobalInject] 필드를 가진 컴포넌트가 없습니다.</i>",
+                "<i>There are no components with the [GlobalInject] field in this root layer.</i>",
                 new GUIStyle(EditorStyles.label) { richText = true });
         }
         else
@@ -231,23 +225,30 @@ public class ObjectInstallerEditor : Editor
                 $"{globalInjectFieldCount} fields require Manager Layer from MasterInstaller",
                 new GUIStyle(EditorStyles.label) { richText = true });
 
-            int displayLimit = 6;
-            foreach (var (inRegistry, text) in globalLines.Take(displayLimit))
+            foreach (var (inRegistry, optional, text) in globalLines)
             {
-                string bulletColor = inRegistry ? "#7BB4FF" : "#FFB374";
-                string status = inRegistry
-                    ? "<color=#7BD88F>[Registered]</color>"
-                    : "<color=#FF6B6B>[Not in registry]</color>";
+                string bulletColor;
+                string status;
+
+                if (inRegistry)
+                {
+                    bulletColor = "#7BB4FF";
+                    status = "<color=#7BD88F>[Registered]</color>";
+                }
+                else if (optional)
+                {
+                    bulletColor = "#888888";
+                    status = "<color=#888888>[Optional — not registered]</color>";
+                }
+                else
+                {
+                    bulletColor = "#FFB374";
+                    status = "<color=#FF6B6B>[Not in registry]</color>";
+                }
+
                 EditorGUILayout.LabelField(
                     $"<color={bulletColor}>●</color> {text}  {status}",
                     new GUIStyle(EditorStyles.label) { richText = true });
-            }
-
-            if (globalLines.Count > displayLimit)
-            {
-                EditorGUILayout.LabelField(
-                    $"… 그리고 <b>{globalLines.Count - displayLimit}</b> 개 더",
-                    new GUIStyle(EditorStyles.miniLabel) { richText = true });
             }
         }
 
@@ -329,8 +330,8 @@ public class MasterInstallerEditor : Editor
 
         EditorGUILayout.Space(8);
 
-        // m_Script 필드는 유니티에서 Mono 스크립트 표기하는 ReadOnly 필드입니다. 딱히 필요 없으니 숨깁니다.
-        // 따로 빼시려면 주석 추가해주세요.
+        // m_Script 필드는 유니티에서 Mono 스크립트 표기하는 ReadOnly 필드. 딱히 필요 없으니 숨김.
+        // 따로 빼려면 주석.
         serializedObject.Update();
         var prop = serializedObject.GetIterator();
         bool enterChildren = true;
@@ -375,7 +376,7 @@ public class MasterInstallerEditor : Editor
         if (count == 0)
         {
             EditorGUILayout.LabelField(
-                "<i>등록된 Manager 가 없습니다. 'Refresh Global Registry' 버튼을 눌러 씬의 [Referral] 컴포넌트를 스캔하세요.</i>",
+                "<i>There are no registered Global Managers. Press the 'Refresh Global Registry' button to scan the scene's [Referral] component.</i>",
                 new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true });
         }
         else
@@ -394,7 +395,7 @@ public class MasterInstallerEditor : Editor
             if (count > displayLimit)
             {
                 EditorGUILayout.LabelField(
-                    $"… 그리고 <b>{count - displayLimit}</b> 개 더",
+                    $"… and <b>{count - displayLimit}</b> more",
                     new GUIStyle(EditorStyles.miniLabel) { richText = true });
             }
         }
@@ -468,7 +469,7 @@ public class SceneInstallerEditor : Editor
         if (count == 0)
         {
             EditorGUILayout.LabelField(
-                "<i>등록된 Scene 매니저가 없습니다. 'Refresh Scene Registry' 버튼을 눌러 씬의 [SceneReferral] 컴포넌트를 스캔하세요.</i>",
+                "<i>There are no registered Scene Managers. Press the 'Refresh Scene Registry' button to scan the scene's [SceneReferral] component.</i>",
                 new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true });
         }
         else
@@ -487,7 +488,7 @@ public class SceneInstallerEditor : Editor
             if (count > displayLimit)
             {
                 EditorGUILayout.LabelField(
-                    $"… 그리고 <b>{count - displayLimit}</b> 개 더",
+                    $"… and <b>{count - displayLimit}</b> more",
                     new GUIStyle(EditorStyles.miniLabel) { richText = true });
             }
         }
