@@ -1,5 +1,5 @@
 # UNInject – High-Performance Unity Dependency Injection SDK
-## Current Version : 1.1.0
+## Current Version : 1.1.1
 
 ![](https://img.shields.io/badge/unity-2021.3%2B-black)
 ![](https://img.shields.io/badge/license-MIT-blue)
@@ -53,9 +53,7 @@ before the game ever runs.
 
 ---
 
-### ✦ Roslyn Source Generator — Full IL2CPP Support (New in v1.1.0)
-
-The defining change of v1.1.0.
+### ✦ Roslyn Source Generator — Full IL2CPP Support
 
 UNInject introduces a **Roslyn Source Generator** based code generation pipeline,  
 completely resolving the **IL2CPP/AOT constraints** that the previous Expression Tree approach carried.
@@ -97,7 +95,7 @@ A **UNI001 warning** is also issued at Roslyn compile time, making it visible at
 
 **No reflection is used at runtime** during dependency injection.
 
-As of v1.1.0, the injection path consists of two tiers.
+The injection path consists of two tiers.
 
 **Priority 1 — Roslyn Generated Plan (IL2CPP safe)**  
 Types with `partial` declarations are injected via Generator-produced `AggressiveInlining` setters,  
@@ -149,7 +147,7 @@ enters Play mode without refreshing the global registry.
 [MasterInstaller] Global registry is empty. Did you forget to click 'Refresh Global Registry' before Play?
 ```
 
-**② UNInjectFallbackGuard** — IL2CPP fallback type detection (New in v1.1.0)
+**② UNInjectFallbackGuard** — IL2CPP fallback type detection
 
 Detects types that will operate on Expression Tree fallback due to missing `partial` declarations.  
 Explicitly lists types that may fall back to `FieldInfo.SetValue` in an IL2CPP build.
@@ -172,7 +170,7 @@ UNInject uses a **cached structural mapping** internally.
 Global and scene registries are built from pre-baked list structures  
 and converted into fast `Dictionary<Type, Component>` lookups at `Awake` time.
 
-In v1.1.0, `TypeDataCache` manages the generated plan cache and reflection cache separately.  
+`TypeDataCache` manages the generated plan cache and reflection cache separately.  
 Types with a registered generated plan complete their lookup in a single `Dictionary` access,  
 making even `Warmup()` calls **effectively zero-cost**.
 
@@ -226,7 +224,6 @@ Supported provider markers:
 Dependencies are injected into target classes via consumer markers.
 
 ```csharp
-// v1.1.0: partial declaration required for Roslyn generated plan
 public partial class PlayerController : MonoBehaviour
 {
     // Resolved at editor-time (Baked)
@@ -269,7 +266,7 @@ It provides the dependency flexibility and debugging capability that
 **major DI solutions (VContainer, Zenject, etc.)** required mock objects to achieve —  
 now expressed cleanly through `[SceneInject(optional: true)]` and `[GlobalInject(optional: true)]`.
 
-From v1.1.0, Optional fields in the Inspector are rendered in **gray (unregistered + intentional)**,  
+Optional fields in the Inspector are rendered in **gray (unregistered + intentional)**,  
 while red warnings are reserved exclusively for **missing required dependencies**.
 
 ---
@@ -373,7 +370,7 @@ ObjectInstaller.Instance.InjectTarget(handle.Instance);
 Because `InjectTarget` uses the same `TypeDataCache` structure,  
 **allocation-free, high-speed injection** is possible even for large volumes of dynamically created objects.
 
-In v1.1.0, if the dynamically injected target is a `partial` class,  
+If the dynamically injected target is a `partial` class,  
 the generated plan path is used as-is — **IL2CPP safety is guaranteed at spawn time**.
 
 ---
@@ -396,7 +393,7 @@ At runtime, Unity's native deserialization restores the connections automaticall
 
 **Roslyn Generated Plan vs Expression Tree vs Reflection**
 
-A comparison of the three setter paths as of v1.1.0.
+A comparison of the three setter paths.
 
 | Path | Condition | IL2CPP | Cost |
 |---|---|---|---|
@@ -444,7 +441,7 @@ via the `AttributeButton` extension.
 * **Read-Only Inject Drawer**
   → Prevents accidental manual modification of `[Inject]` fields
 
-* **✦ 3-State Optional Status Display (New in v1.1.0)**  
+* **✦ 3-State Optional Status Display**  
   → Dependency status is distinguished by three colors
 
 | Color | Meaning |
@@ -456,7 +453,7 @@ via the `AttributeButton` extension.
 By rendering Optional dependencies in gray,  
 **only genuine problems are immediately visually apparent**.
 
-* **✦ Full Dependency List Display (New in v1.1.0)**  
+* **✦ Full Dependency List Display**  
   → The previous "… and N more" truncation has been removed.  
   Dependencies are architectural information — all entries are always shown.  
   (If the dependency field count reaches the dozens, that itself is a signal to revisit the design.)
@@ -475,7 +472,7 @@ This indicates a registry bake is required. The warning disappears after refresh
 
 ---
 
-> **New in v1.1.0 — Entering Play mode without `partial`** produces the following warning.
+> **Entering Play mode without `partial`** produces the following warning.
 
 ```
 [UNInject] The following types are missing a 'partial' declaration and will use
@@ -498,7 +495,7 @@ but this must be resolved before targeting IL2CPP builds.
 
 ### Compiler Support
 
-**IL2CPP / AOT environments are officially supported as of v1.1.0.**
+**IL2CPP / AOT environments are officially supported.**
 
 Code generated by the Roslyn Source Generator does not use `Expression.Compile()`,  
 making it **safe on all AOT platforms (iOS, consoles, etc.)**.
@@ -509,58 +506,45 @@ In those cases, `UNInjectFallbackGuard` emits an explicit warning on Play enter.
 ---
 
 ```
+──────────────────────────────────────────────────────────────────────
 1.1.0 — Full IL2CPP Support (Released)
-────────────────────────────────────────────────────────────
-Roslyn Source Generator introduced.
+──────────────────────────────────────────────────────────────────────
+Roslyn Source Generator introduced. IL2CPP-safe setters auto-generated via partial classes.
+UNInjectFallbackGuard added. Inspector Optional 3-state display. Full dependency list.
+ALL PASSED  (24 + 51 tests)
+```
 
-Dependency matching plans are automatically collected and generated at compile time,
-then supplied to the runtime.
-IL2CPP-safe setters with direct private field access are auto-generated via partial classes.
-Constant time O(1) lookup guaranteed for all resolutions.
+```
+──────────────────────────────────────────────────────────────────────
+1.1.1 — Internal Integrity Hardening (Released)
+──────────────────────────────────────────────────────────────────────
+No public API changes. No behavioral changes.
+All improvements are internal — focused on structural soundness and test coverage.
 
-UNInjectFallbackGuard added: explicitly warns on Play enter for types missing partial.
-Inspector Optional 3-state display: visually separates intentional non-registration from actual errors.
-Full dependency list display: displayLimit removed.
+InstallerRegistryHelper introduced (new internal class)
+  RegisterTypeMappings / IsMappableAbstraction / TryAdd extracted from both
+  MasterInstaller and SceneInstaller into a single shared helper.
+  Policy changes now require a single edit.
 
-All cases verified — ObjectInstaller (Consumer) <-> Master/Scene Installer (Provider)
+Safety Net hardened — MasterInstaller.Resolve()
+  Previously, every cache miss unconditionally triggered a full _globalReferrals traversal.
+  Replaced with armed/disarmed pattern (_safetyNetArmed):
+  one recovery attempt per registry build cycle, re-arms on explicit rebuild only.
+  After disarm, misses cost a Dictionary lookup + bool check only.
 
-══════════════════════════════════════
-       UNInject Test Results
-══════════════════════════════════════
-  Precondition: MasterInstaller present
-  Precondition: SceneInstaller present
-  Precondition: Consumer object present (Generated : Roslyn Source)
-  Precondition: Consumer object present (Fallback)
-  Precondition: Consumer object present (Optional)
-  Precondition: Consumer object present (Callback)
-  Precondition: Consumer object present (Mixed)
+Assembly isolation — three independent asmdef units
+  UNInject.Runtime / UNInject.Editor / UNInject.Tests.EditMode
+  Editor code excluded from player builds by definition.
 
-  MonoBehaviour Lifecycle
-  ✓ [Provider] Awake - dependency provision successful
-  ✓ [Provider] Start - dependency provision successful
+EditMode unit tests — 43 cases added
+  InstallerRegistryHelper (18): filter policy, collision/null handling, mapping paths.
+  TypeDataCache (25): field collection, cache identity, setter write, Warmup, null defense.
 
-  ✓ [Consumer] Awake - dependency injection successful
-  ✓ [Consumer] Start - dependency injection successful
-  Lifecycle fully compatible
+Static cache isolation fix
+  HasGeneratedPlan tests were failing non-deterministically due to shared static state.
+  Resolved by structurally separating read targets from write targets via sentinel types.
 
-  ✓ [A] Generated — Interface injection from scene-placed component successful
-  ✓ [A] Generated — Correct implementation resolved successfully
-  ✓ [A] Generated — Plain MonoBehaviour provider injection successful
-  ✓ [A] Generated — Roslyn plan registration confirmed (HasGeneratedGlobalPlan) successful
-  ✓ [B] Fallback — Interface injection via fallback path (no partial) successful
-  ✓ [B] Fallback — Correct implementation resolved via fallback successful
-  ✓ [C] Optional — Abstract interface injection with optional: true successful
-  ✓ [C] Optional — Mock object test: absent interface injection successful
-  ✓ [C] Optional — Required injection succeeds (optional absence does not cause failure)
-  ✓ [D] Callback — Dependency injection successful
-  ✓ [D] Callback — OnInjected() called exactly once successful
-  ✓ [E] Mixed — GlobalInject + SceneInject combined injection successful
-  ✓ [Dynamic] Manual InjectTarget — injection successful
-
-  Goal: approach "SerializeField-level cost" on all runtimes
-──────────────────────────────────────
-  ALL PASSED  (24 + 51 tests)
-══════════════════════════════════════
+ALL PASSED  (43 EditMode unit tests)
 ```
 
 ```
@@ -592,9 +576,9 @@ UNInject preserves the strengths of major solutions while significantly reducing
 the learning curve and initial design overhead.  
 The author actively uses this SDK in casual and mid-core game development.
 
-v1.1.0 completes the first milestone toward enterprise readiness with full IL2CPP support.  
-Adding a single `partial` keyword is all it takes to guarantee  
-**reflection-free injection on mobile and console platforms**.
+v1.1.1 tightens the internal structure — shared registry logic, a guarded Safety Net,
+full assembly isolation, and 43 passing EditMode unit tests.
+The core engine is verified. The next milestone is scope and lifetime advancement.
 
 Give it a try — it's worth it.
 
