@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: da85883e344bf6b438cac5b5480446a6
+guid: 14aed6953e45de94a9fc77c62d8ff6fe
 labels:
 - RoslynAnalyzer
 PluginImporter:
@@ -51,25 +51,25 @@ PluginImporter:
     second:
       enabled: 0
       settings:
-        CPU: None
+        CPU: AnyCPU
   - first:
       Standalone: OSXUniversal
     second:
       enabled: 0
       settings:
-        CPU: None
+        CPU: AnyCPU
   - first:
       Standalone: Win
     second:
       enabled: 0
       settings:
-        CPU: None
+        CPU: AnyCPU
   - first:
       Standalone: Win64
     second:
       enabled: 0
       settings:
-        CPU: None
+        CPU: AnyCPU
   - first:
       Windows Store Apps: WindowsStoreApps
     second:
