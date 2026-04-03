@@ -16,16 +16,24 @@ using UnityEditor;
 /// - 런타임: Bake된 _globalReferrals 를 기반으로 딕셔너리를 구성하고 Resolve() 로 조회
 ///
 /// ※ 런타임에서는 MonoBehaviour 전체 순회를 하지 않음.
-///    (전역 매니저 목록은 에디터에서 미리 Bake 된 결과만 사용)
 ///
 /// [개선 v1.1]
-///   - RegisterTypeMappings / IsMappableAbstraction / TryAdd →
-///     InstallerRegistryHelper 로 이동. SceneInstaller 와 공유.
-///   - Resolve() 의 Safety Net 이 매 호출마다 RebuildRuntimeRegistry() 를
-///     무조건 실행하던 문제 수정 → armed/disarmed 패턴으로 1회만 실행.
+///   - 공통 로직 → InstallerRegistryHelper.
+///   - Safety Net armed/disarmed 패턴으로 1회 복구.
+///
+/// [개선 v2.0]
+///   - 레지스트리: Dictionary&lt;Type, Component&gt; → Dictionary&lt;RegistryKey, Component&gt;.
+///   - Named/Keyed Resolve: Resolve(Type, string id), ResolveAs&lt;T&gt;(string id).
+///   - Create&lt;T&gt;(): 생성자 주입으로 순수 C# 인스턴스 생성.
+///   - RefreshRegistry: seenKeys 를 HashSet&lt;RegistryKey&gt; 로 교체.
+///
+/// [개선 v2.1]
+///   - ITickable / IFixedTickable / ILateTickable 생명주기 위임.
+///     Create&lt;T&gt;() 후 해당 인터페이스 구현 여부를 확인하고 자동 등록.
+///     DontDestroyOnLoad 수명 동안 Update / FixedUpdate / LateUpdate 에서 틱 제공.
 /// </summary>
 [DefaultExecutionOrder(-1000)]
-public class MasterInstaller : MonoBehaviour
+public class MasterInstaller : MonoBehaviour, IScope
 {
     private static MasterInstaller _instance;
     public static MasterInstaller Instance
@@ -44,25 +52,25 @@ public class MasterInstaller : MonoBehaviour
         }
     }
 
-    // 런타임 전역 레지스트리 (Type -> Component)
-    private readonly Dictionary<Type, Component> _runtimeRegistry = new Dictionary<Type, Component>();
+    // v2.0: RegistryKey = (Type, string Id) 복합 키
+    private readonly Dictionary<RegistryKey, Component> _runtimeRegistry
+        = new Dictionary<RegistryKey, Component>();
 
-    // 에디터에서 BakeUp 되는 Manager Layer 목록
     [SerializeField, Tooltip("The list of Manager Layer components with [Referral] on the scene (automatically filled by Refresh Global Registry, read-only)")]
     private List<Component> _globalReferrals = new List<Component>();
+
+    private readonly Dictionary<MonoBehaviour, List<Component>> _ownershipMap
+        = new Dictionary<MonoBehaviour, List<Component>>();
+
+    // ─── v2.1: Tickable / IScopeDestroyable 관리 ─────────────────────────────
+    private readonly TickableRegistry _ticks = new TickableRegistry();
 
     // ─── Safety Net 상태 ───────────────────────────────────────────────────
     // true  : 다음 Resolve 미스 시 레지스트리 재구성을 1회 시도할 수 있음
     // false : 이미 시도했음. 추가 재구성을 하지 않음.
     //
-    // 설계 의도:
-    //   Bootstrap 타이밍 문제나 도메인 리로드 엣지 케이스에서 레지스트리가
-    //   아직 채워지지 않은 상태로 Resolve 가 호출될 수 있음.
-    //   이를 1회 자동 복구하되, 타입이 진짜 존재하지 않는 경우에는
-    //   매 호출마다 전체 순회를 반복하지 않도록 함.
-    //
     // 재무장(re-arm) 조건:
-    //   명시적인 RebuildRuntimeRegistry() 호출 (Bootstrap, Awake, RefreshRegistry)
+    //   명시적인 RebuildRuntimeRegistry() 호출 또는 Register() 호출
     //   → 소스 데이터가 변경되었으므로 다시 1회 시도 기회를 부여.
     private bool _safetyNetArmed = true;
 
@@ -115,7 +123,22 @@ public class MasterInstaller : MonoBehaviour
             _instance = null;
 
         _runtimeRegistry.Clear();
+        _ownershipMap.Clear();
+        _ticks.ClearWithDestroy();
     }
+
+    // ─── v2.1: Tickable 틱 ───────────────────────────────────────────────────
+
+    private void Update()        => _ticks.Tick();
+    private void FixedUpdate()   => _ticks.FixedTick();
+    private void LateUpdate()    => _ticks.LateTick();
+
+    // ─── v2.1: Tickable / IScopeDestroyable 등록·해제 ────────────────────────
+
+    private void RegisterTickables(object obj)          => _ticks.Register(obj);
+    public void UnregisterTickable(ITickable tickable)  => _ticks.Unregister(tickable);
+    public void UnregisterTickable(IFixedTickable t)    => _ticks.Unregister(t);
+    public void UnregisterTickable(ILateTickable t)     => _ticks.Unregister(t);
 
     // ─── Registry Build ───────────────────────────────────────────────────────
 
@@ -147,39 +170,40 @@ public class MasterInstaller : MonoBehaviour
             InstallerRegistryHelper.RegisterTypeMappings(
                 comp,
                 _runtimeRegistry,
-                ownerTag: "MasterInstaller",
-                bindTypeOverride: referral?.BindType);
+                ownerTag:         "MasterInstaller",
+                bindTypeOverride: referral?.BindType,
+                id:               referral?.Id ?? RegistryKey.DefaultId);
         }
     }
 
-    // ─── Resolve API ─────────────────────────────────────────────────────────
+    // ─── Resolve API (내부 공통 경로) ─────────────────────────────────────────
 
     /// <summary>
-    /// 런타임 전역 레지스트리에서 타입에 해당하는 컴포넌트를 반환한다.
-    ///
-    /// Safety Net:
-    ///   조회 미스 발생 시, 레지스트리가 미초기화 상태일 가능성에 대비해
-    ///   단 1회 재구성을 시도한다.
-    ///   이미 시도했거나 재구성 후에도 없으면 null 을 반환한다.
-    ///   → 타입이 진짜 없는 경우 매 호출마다 전체 순회하는 문제를 방지.
+    /// RegistryKey 로 컴포넌트를 조회하는 내부 메서드.
+    /// Safety Net 패턴을 한 곳에서만 관리함.
     /// </summary>
-    public Component Resolve(Type type)
+    private Component ResolveByKey(RegistryKey key)
     {
-        if (type == null) return null;
+        if (key.Type == null) return null;
 
-        if (_runtimeRegistry.TryGetValue(type, out var comp) && comp != null)
+        if (_runtimeRegistry.TryGetValue(key, out var comp) && comp != null)
             return comp;
 
         // Safety Net: 레지스트리 미초기화 엣지 케이스에 대한 1회 복구 시도
         if (_safetyNetArmed)
         {
-            _safetyNetArmed = false;            // 무장 해제 (이후 미스에서는 재구성 없음)
-            RebuildRuntimeRegistryCore();       // 상태 변경 없는 코어 재구성
-            _runtimeRegistry.TryGetValue(type, out comp);
+            _safetyNetArmed = false;
+            RebuildRuntimeRegistryCore();
+            _runtimeRegistry.TryGetValue(key, out comp);
         }
 
         return comp;
     }
+
+    // ─── Resolve API (IScope 구현 — 무키, v1.x 하위 호환) ────────────────────
+
+    public Component Resolve(Type type)
+        => ResolveByKey(new RegistryKey(type));
 
     public bool TryResolve(Type type, out Component component)
     {
@@ -188,9 +212,7 @@ public class MasterInstaller : MonoBehaviour
     }
 
     public T Resolve<T>() where T : Component
-    {
-        return Resolve(typeof(T)) as T;
-    }
+        => Resolve(typeof(T)) as T;
 
     public bool TryResolve<T>(out T component) where T : Component
     {
@@ -198,14 +220,8 @@ public class MasterInstaller : MonoBehaviour
         return component != null;
     }
 
-    /// <summary>
-    /// 인터페이스/추상 타입을 포함해 조회 가능한 헬퍼.
-    /// 예) var input = MasterInstaller.Instance.ResolveAs&lt;IInputManager&gt;();
-    /// </summary>
     public T ResolveAs<T>() where T : class
-    {
-        return Resolve(typeof(T)) as T;
-    }
+        => Resolve(typeof(T)) as T;
 
     public bool TryResolveAs<T>(out T value) where T : class
     {
@@ -214,18 +230,116 @@ public class MasterInstaller : MonoBehaviour
     }
 
     public static T ResolveStatic<T>() where T : Component
+        => Instance != null ? Instance.Resolve<T>() : null;
+
+    // ─── v2.0: Named Resolve ─────────────────────────────────────────────────
+
+    /// <summary>Named 바인딩에서 특정 Id 로 등록된 컴포넌트를 반환한다.</summary>
+    public Component Resolve(Type type, string id)
+        => ResolveByKey(new RegistryKey(type, id));
+
+    public bool TryResolve(Type type, string id, out Component component)
     {
-        return Instance != null ? Instance.Resolve<T>() : null;
+        component = Resolve(type, id);
+        return component != null;
+    }
+
+    /// <summary>
+    /// Named 바인딩에서 특정 Id 로 등록된 컴포넌트를 인터페이스/추상 타입으로 반환한다.
+    /// 예) var enemy = MasterInstaller.Instance.ResolveAs&lt;IEnemyManager&gt;("world1");
+    /// </summary>
+    public T ResolveAs<T>(string id) where T : class
+        => Resolve(typeof(T), id) as T;
+
+    // ─── v1.2: IScope — 런타임 Register / Unregister ─────────────────────────
+
+    public void Register(Component comp)
+        => Register(comp, null);
+
+    public void Register(Component comp, MonoBehaviour owner)
+    {
+        if (comp == null) return;
+
+        var referral = System.Attribute.GetCustomAttribute(comp.GetType(), typeof(ReferralAttribute)) as ReferralAttribute;
+        InstallerRegistryHelper.RegisterTypeMappings(
+            comp,
+            _runtimeRegistry,
+            ownerTag:         "MasterInstaller",
+            bindTypeOverride: referral?.BindType,
+            id:               referral?.Id ?? RegistryKey.DefaultId);
+
+        _safetyNetArmed = true;
+
+        if (owner != null)
+        {
+            if (!_ownershipMap.TryGetValue(owner, out var list))
+            {
+                list = new List<Component>();
+                _ownershipMap[owner] = list;
+            }
+            list.Add(comp);
+
+            var tracker = owner.gameObject.GetComponent<ScopeOwnerTracker>()
+                          ?? owner.gameObject.AddComponent<ScopeOwnerTracker>();
+            tracker.AddDestroyCallback(() =>
+                InstallerRegistryHelper.UnregisterByOwner(
+                    _runtimeRegistry, _ownershipMap, owner, "MasterInstaller"));
+        }
+
+        if (!TypeDataCache.HasGeneratedGlobalPlan(comp.GetType()))
+        {
+            Debug.LogWarning(
+                $"[MasterInstaller] Register: '{comp.GetType().Name}' has no Roslyn-generated plan. " +
+                "Declare the class as 'public partial class' to enable zero-reflection injection.");
+        }
+    }
+
+    /// <summary>지정 타입의 무키(기본) 등록을 전역 레지스트리에서 제거한다.</summary>
+    public void Unregister(Type type)
+        => Unregister(type, RegistryKey.DefaultId);
+
+    /// <summary>v2.0: 지정 타입 + Id 의 Named 등록을 전역 레지스트리에서 제거한다.</summary>
+    public void Unregister(Type type, string id)
+    {
+        if (type == null) return;
+        var key = new RegistryKey(type, id);
+        if (_runtimeRegistry.Remove(key))
+            Debug.Log($"[MasterInstaller] Unregistered '{key}'.");
+    }
+
+    /// <summary>해당 컴포넌트가 등록된 모든 키(구체/인터페이스/베이스)를 한 번에 제거한다.</summary>
+    public void Unregister(Component comp)
+    {
+        InstallerRegistryHelper.Unregister(_runtimeRegistry, comp, "MasterInstaller");
+    }
+
+    // ─── v2.0: 생성자 주입 Create<T> ─────────────────────────────────────────
+
+    /// <summary>
+    /// [InjectConstructor] 또는 단일 public 생성자를 통해 T 의 인스턴스를 생성한다.
+    /// 생성자 파라미터와 [GlobalInject]/[SceneInject] 필드를 함께 주입함.
+    ///
+    /// 해결 우선순위: MasterInstaller(전역) → SceneInstaller(씬).
+    ///
+    /// 대상: ScriptableObject, 순수 C# 서비스 클래스. MonoBehaviour 에는 사용하지 않는다.
+    /// </summary>
+    public T Create<T>() where T : class
+    {
+        return InstallerRegistryHelper.CreateAndInject<T>(
+            resolver: (type, id) =>
+            {
+                var comp = ResolveByKey(new RegistryKey(type, id));
+                if (comp == null && SceneInstaller.Instance != null)
+                    comp = SceneInstaller.Instance.Resolve(type, id);
+                return comp;
+            },
+            ownerTag:  "MasterInstaller",
+            onCreated: RegisterTickables);  // v2.1: ITickable 자동 등록
     }
 
     // ─── Editor ──────────────────────────────────────────────────────────────
 
 #if UNITY_EDITOR
-    /// <summary>
-    /// 에디터(PlayMode 아님)에서 현재 씬의 [Referral] 컴포넌트들을 스캔하여
-    /// _globalReferrals 리스트를 갱신하고, 레지스트리를 재구성한다.
-    /// ObjectInstaller.BakeDependencies 에서도 호출될 수 있음.
-    /// </summary>
     [ContextMenu("Refresh Global Registry")]
     public void RefreshRegistry()
     {
@@ -235,7 +349,9 @@ public class MasterInstaller : MonoBehaviour
             .Where(c => c.gameObject.scene.IsValid() && c.gameObject.scene.isLoaded)
             .Where(c => c.gameObject.hideFlags == HideFlags.None);
 
-        var seenKeys = new HashSet<Type>();
+        // v2.0: seenKeys 를 HashSet<RegistryKey> 로 교체.
+        //       동일 타입이라도 Id 가 다르면 별개의 Named 바인딩으로 허용.
+        var seenKeys = new HashSet<RegistryKey>();
 
         foreach (var comp in allComponents)
         {
@@ -245,12 +361,13 @@ public class MasterInstaller : MonoBehaviour
             if (!Attribute.IsDefined(type, typeof(ReferralAttribute))) continue;
 
             var referral = Attribute.GetCustomAttribute(type, typeof(ReferralAttribute)) as ReferralAttribute;
-            var key = (referral != null && referral.BindType != null) ? referral.BindType : type;
+            var bindType = (referral != null && referral.BindType != null) ? referral.BindType : type;
+            var key      = new RegistryKey(bindType, referral?.Id ?? RegistryKey.DefaultId);
 
             if (!seenKeys.Add(key))
             {
                 Debug.LogWarning(
-                    $"[MasterInstaller] Multiple [Referral] components mapped to '{key.Name}' found in scene. " +
+                    $"[MasterInstaller] Multiple [Referral] components mapped to '{key}' found in scene. " +
                     $"Only the first one will be used in global registry.");
                 continue;
             }
@@ -265,11 +382,7 @@ public class MasterInstaller : MonoBehaviour
         Debug.Log($"<color=yellow>[MasterInstaller]</color> Global Registry Updated. Count: {_globalReferrals.Count}");
     }
 
-    /// <summary>
-    /// 에디터 Bake 용 헬퍼: 타입에 맞는 Manager 컴포넌트를 반환한다.
-    /// </summary>
-    public Component GetGlobalComponent(Type type) => Resolve(type);
-
-    public T GetGlobalComponent<T>() where T : Component => Resolve<T>();
+    public Component GetGlobalComponent(Type type)  => Resolve(type);
+    public T         GetGlobalComponent<T>() where T : Component => Resolve<T>();
 #endif
 }
