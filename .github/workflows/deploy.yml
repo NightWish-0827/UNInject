@@ -1,4 +1,4 @@
-name: Deploy Wiki
+name: Deploy Wiki v2
 
 on:
   push:
