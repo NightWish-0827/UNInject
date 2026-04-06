@@ -151,18 +151,22 @@ public static class UninjectSmokeMenu
 
 **각 Domain을 가진 Installer Component**들의 Inspector 외형 및 **수동 Bake Up**.
 
-<div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
+import useBaseUrl from '@docusaurus/useBaseUrl';
+
+<div style={{ display: 'flex', justifyContent: 'center', gap: '15px', flexWrap: 'wrap' }}>
   <div style={{ textAlign: 'center' }}>
-    <img src="/img/getting-started/masterrefresh.png" width="300" />
-    <div>Master Installer</div>
+    <img src={useBaseUrl('/img/getting-started/masterrefresh.png')} width="300" />
+    <div style={{ marginTop: '8px', fontWeight: 'bold' }}>Master Installer</div>
   </div>
   <div style={{ textAlign: 'center' }}>
-    <img src="/img/getting-started/scenerefresh.png" width="300" />
-    <div>Scene Installer</div>
+    <img src={useBaseUrl('/img/getting-started/scenerefresh.png')} width="300" />
+    <div style={{ marginTop: '8px', fontWeight: 'bold' }}>Scene Installer</div>
   </div>
   <div style={{ textAlign: 'center' }}>
-    <img src="/img/getting-started/bake.png" width="300" />
-    <div>Object Installer   
-    **주입 필드가 존재하는 오브젝트 중 일부 루트**</div>
+    <img src={useBaseUrl('/img/getting-started/bake.png')} width="300" />
+    <div style={{ marginTop: '8px' }}>
+      <strong>Object Installer</strong><br/>
+      <small>주입 필드가 존재하는 오브젝트 중 일부 루트</small>
+    </div>
   </div>
 </div>
