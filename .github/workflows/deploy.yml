@@ -1,10 +1,16 @@
-name: Deploy Wiki v2
+name: Deploy Wiki
 
 on:
   push:
-    branches: [main] # 혹은 master
+    branches: [main]
     paths:
-      - 'wikidocs/**' # wikidocs 폴더 변경 시에만 실행
+      - 'wikidocs/**'
+  workflow_dispatch:
+
+# --- 이 부분을 추가하세요 (권한 설정) ---
+permissions:
+  contents: write
+# ------------------------------------
 
 jobs:
   deploy:
@@ -30,4 +36,5 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./wikidocs/build
-          # 중요: 이미 github.io가 있으므로 해당 레포의 서브 경로로 배포됨
+          # 만약 첫 배포라면 아래 설정을 추가하는 것이 안전합니다.
+          force_orphan: true
