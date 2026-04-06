@@ -1,0 +1,90 @@
+﻿---
+title: Bake와 LocalInject
+sidebar_label: Bake · LocalInject
+description: "ObjectInstaller.BakeDependencies, [Inject], 에디터 전용 직렬화 연결"
+---
+
+# Bake와 LocalInject (`[Inject]`)
+
+**로컬(서브트리) 주입**은 `[Inject]` 속성(`CoreAttributes.cs`의 `InjectAttribute`)과 **`ObjectInstaller`**가 함께 이룹니다.  
+런타임에 `MasterInstaller`가 전역 매니저를 찾아 주는 것과 달리,  
+`[Inject]`는 **같은 `ObjectInstaller` 루트 아래**에서 타입이 맞는 `Component`를 찾아 **직렬화 필드에 연결**합니다.
+
+에디터에서 그 연결을 일괄 갱신하는 API가 **`BakeDependencies`** 입니다.
+
+---
+
+## API: `ObjectInstaller.BakeDependencies`
+
+**선언 위치:** `Runtime/ObjectInstaller.cs`, `#if UNITY_EDITOR` 블록.
+
+**트리거:**
+
+- 인스펙터 버튼 **Bake Dependencies** (`ObjectInstallerEditor.cs`).
+
+- 컴포넌트 컨텍스트 메뉴 **Bake Dependencies**.
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/getting-started/bake.png" width="400" />
+</div>
+
+**처리 순서 :**
+
+1. `MasterInstaller.Instance`가 null이 아니면  
+**`master.RefreshRegistry()`** 호출 — 베이크 직전 전역 레지스트리를 최신 씬 상태로 맞춤.
+
+2. `GetComponentsInChildren<Component>(true)`로 **제공자 후보 목록** `providers` 구성.
+
+3. 같은 서브트리의 모든 `MonoBehaviour`에 대해, 리플렉션으로 **인스턴스 필드**를 순회.
+
+4. 필드에 `[Inject]`가 있으면, `providers`에서 **자기 자신이 아니고,**  
+`field.FieldType.IsInstanceOfType(p)`인 첫 컴포넌트를 찾아 할당.
+
+5. 각 타깃에 `EditorUtility.SetDirty` 호출.
+
+6. 연결이 바뀐 필드 개수를 로그: `[ObjectInstaller] Bake Complete! (N links updated)`.
+
+```csharp
+// Bake 시 매칭 규칙 (개념)
+// - [Inject] SerializeField 필드
+// - 같은 ObjectInstaller 자식 트리의 Component 중
+//   field.FieldType.IsInstanceOfType(provider) 인 첫 번째
+```
+
+:::danger
+- `[Inject]`는 **`[SerializeField]`와 함께 쓰는 것이 전제**입니다. 직렬화되지 않으면 인스펙터·저장이 어긋납니다.
+
+- 필드는 `public` / `private` 모두 `BindingFlags.Public | NonPublic | Instance`로 스캔합니다.
+:::
+
+---
+
+## 올바른 사용 예
+
+```csharp
+using UnityEngine;
+
+public partial class PlayerView : MonoBehaviour
+{
+    // Bake가 같은 루트 아래에서 Animator를 찾아 연결
+    [SerializeField, Inject] private Animator _animator;
+}
+```
+
+`ObjectInstaller`가 붙은 GameObject **자식**에 `PlayerView`와 `Animator`가 함께 있어야 합니다.
+
+---
+
+## 런타임과의 관계
+
+`ObjectInstaller.Awake`는 `InjectGlobalDependencies()`에서 **`[GlobalInject]` / `[SceneInject]`** 만 `TypeDataCache` 경로로 주입합니다. **`[Inject]` 필드 값은 직렬화된 참조**를 그대로 쓰는 형태에 가깝고, Bake는 그 참조를 에디터에서 맞춰 주는 단계입니다.
+
+---
+
+## 자주 하는 실수
+
+- Bake 후에도 링크가 비면 : 트리 안에 **요구 타입에 할당 가능한 Component**가 없거나,  
+대상이 비활성/다른 루트에 있는 경우입니다.
+
+- 전역 매니저만 바꿨는데 로컬이 이상하면 : Bake 시작 시 호출되는 **`Refresh Global Registry`** 가  
+기대대로 동작하는지(씬에 `MasterInstaller`가 있는지) 확인하세요.

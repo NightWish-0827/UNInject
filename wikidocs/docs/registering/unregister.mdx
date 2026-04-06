@@ -1,0 +1,67 @@
+﻿---
+title: Unregister
+sidebar_label: Unregister
+description: "Type, Type+Id, Component 단위 해제, ObjectInstaller 차이"
+---
+
+# Unregister
+
+등록을 되돌리는 방법은 **키 단위**와 **컴포넌트 단위**, 그리고 **소유권 자동 해제** 세 가지 축으로 이해하면 됩니다.
+
+---
+
+## `Unregister(Type)` / `Unregister(Type, string id)`
+
+- **`Unregister(Type)`** — 무키(`Id == 빈 문자열`)에 대응하는 **`RegistryKey(type, default)`** 한 줄만 제거합니다.
+
+- **`Unregister(Type, id)`** — Named 키 **`RegistryKey(type, id)`** 한 줄만 제거합니다.
+
+성공 시 `MasterInstaller`·`SceneInstaller`는 로그를 남깁니다.  
+**`ObjectInstaller`** 는 동일 시그니처지만 **로그 없이** `_localRegistry.Remove`만 수행합니다.
+
+---
+
+## `Unregister(Component comp)`
+
+**`MasterInstaller`와 `SceneInstaller`에만** 있습니다.
+
+해당 컴포넌트가 **값으로 들어 있는 모든 키**를 찾아 제거합니다.  
+`RegisterTypeMappings`가 한 컴포넌트에 여러 키를 만들었기 때문에, 이 API가 **가장 확실한 “전부 지우기”** 입니다.
+
+**`ObjectInstaller`에는 `Unregister(Component)`가 없습니다.**  
+로컬 스코프에서는 **`Unregister(Type)` / `Unregister(Type, id)`** 로 필요한 키만 골라 지우거나,  
+**`Register(..., owner)`** 로 수명에 맡깁니다.
+
+---
+
+## 소유권과의 관계
+
+`Register(comp, owner)`로 올린 항목은 **`owner` 파괴 시** `UnregisterByOwner`가 호출되어,  
+그 owner에 연결된 컴포넌트 등록이 한꺼번에 풀립니다. 수동으로 `Unregister`를 호출하지 않아도 됩니다.
+
+---
+
+## 정리 표
+
+| API | Master | Scene | Object (로컬) |
+|-----|--------|-------|---------------|
+| `Unregister(Type)` | O | O | O |
+| `Unregister(Type, id)` | O | O | O |
+| `Unregister(Component)` | O | O | **X** |
+
+---
+
+## Pure C# 인스턴스
+
+`Create<T>()`로 만든 객체는 **레지스트리에 “Component로” 들어가지 않습니다.** 수명은 GC·직접 보관·풀 정책에 따릅니다. `ITickable` 등은 생성 스코프의 Installer가 틱에 올렸다면 **`UnregisterTickable`** 또는 스코프 파괴로 정리됩니다.
+
+```csharp
+// 전역에서 인터페이스 무키 한 줄만 제거
+master.Unregister(typeof(IMyApi));
+
+// Named 한 줄만 제거
+master.Unregister(typeof(IMyApi), "music");
+
+// 이 컴포넌트가 잡고 있던 모든 키 제거 (전역/씬)
+master.Unregister(myServiceComponent);
+```

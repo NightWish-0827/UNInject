@@ -1,0 +1,102 @@
+﻿---
+title: 매핑 규칙
+sidebar_label: 매핑 규칙
+description: "BindType 단일 키 vs 전체 매핑, 인터페이스·베이스 제외 규칙"
+---
+
+# 매핑 규칙 (`RegisterTypeMappings`)
+
+컴포넌트 하나를 레지스트리에 넣을 때, **어떤 `RegistryKey`들이 생기는지**가 여기서 결정됩니다.  
+`MasterInstaller`, `SceneInstaller`, `ObjectInstaller`가 동일한 정적 헬퍼를 사용합니다.
+
+---
+
+## 1) `bindTypeOverride`가 지정된 경우
+
+`comp`의 런타임 타입을 `concrete`라 할 때 :
+
+- `bindTypeOverride`가 `concrete`에 **할당 가능**하면 → **`RegistryKey(bindTypeOverride, id)` 한 개만** 등록하고 **즉시 반환**.
+
+- 할당 불가면 → 경고 로그 후 **아래 “전체 매핑” 경로**로 진행합니다.
+
+:::info
+**의미:** `[Referral(typeof(IMyApi))]` 또는 `Register<IMyApi>(comp)`처럼,  
+**“이 구현체는 반드시 이 추상 타입으로만 노출한다”** 는 계약을 강하게 걸 때 씁니다.  
+인터페이스로 `Resolve`하는 패턴에 맞춥니다.
+:::
+
+---
+
+## 2) 전체 매핑 경로 (`bindTypeOverride`가 null이거나 폴백)
+
+순서대로 키를 추가합니다.
+
+1. **구체 타입** — `RegistryKey(concrete, id)`
+
+2. **구현 인터페이스** — `concrete.GetInterfaces()` 각각에 대해, 아래 **제외 규칙**을 통과하는 타입만 키로 등록
+
+3. **베이스 타입 체인** — `BaseType`을 따라 올라가며 `object`, `Component`, `Behaviour`, `MonoBehaviour` **직전까지** 키로 등록
+
+즉 한 컴포넌트는 **여러 키**를 가질 수 있고, `Unregister(Component)` 시 **그 컴포넌트를 값으로 갖는 모든 키**가 한꺼번에 제거됩니다.
+
+---
+
+## 인터페이스·타입 제외 규칙 (`IsMappableAbstraction`)
+
+다음 네임스페이스로 시작하거나 루트가 해당 네임스페이스인 타입은 **레지스트리 키로 쓰지 않습니다**.
+
+- `System` / `System.*`
+
+- `UnityEngine` / `UnityEngine.*`
+
+- `UnityEditor` / `UnityEditor.*`
+
+- `Unity` / `Unity.*`
+
+`object`는 키로 쓰지 않습니다.
+
+:::info
+**이유 :** `IDisposable` 같은 범용 인터페이스나 Unity 공통 베이스에 매핑이 걸리면,  
+**의도하지 않은 광범위 Resolve**가 발생하기 쉽기 때문입니다. 따라서 위 방법과 같이 필터링 하여 사용합니다.
+:::
+---
+
+## `ObjectInstaller`만의 차이
+
+`RegisterInternal`에서 **`bindTypeOverride` 인자**가 명시 오버로드(`Register<TBind>`)로 들어오면 그것이 최우선입니다.  
+그다음에 타입에 붙은 `[Referral]`, 그다음 `[SceneReferral]`의 `BindType`을 봅니다.  
+**`[Referral]`이 있으면 `[SceneReferral]`은 읽지 않습니다.**
+
+---
+
+## Pure C# 레이어 (요약)
+
+- **레지스트리에 “올라가는” 것**은 기본적으로 **`Component` 인스턴스**입니다.
+
+- **순수 C# 서비스**는 `IScope.Create<T>()`로 만들며,  
+이때 생성자·필드에 필요한 **`Component` 의존성**은 위 규칙으로 등록된 매니저에서 `RegistryKey`로 조회됩니다.
+
+- `MonoBehaviour`에는 `[InjectConstructor]` 사용을 가정하지 않습니다.
+
+:::danger
+`MonoBehaviour`를 상속받은 컴포넌트에서 **[InjectConstructor]** 사용은 검증되지 않았습니다.  
+현재로서는 **이론적으로도, 물리적으로도 적합하지 않으니 사용하지 않는 것을 권장**드립니다.
+:::
+
+**공급 :**
+
+```csharp
+// 인터페이스 단일 노출 (전역 예시 패턴)
+[Referral(typeof(IConfig))]
+public class ConfigService : MonoBehaviour, IConfig { }
+```
+
+**소비 :** 
+
+```csharp
+// 소비자 : 무키면 typeof(IConfig) 키로 조회
+public partial class Consumer : MonoBehaviour
+{
+    [GlobalInject] private IConfig _config;
+}
+```

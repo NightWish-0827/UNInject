@@ -1,0 +1,71 @@
+﻿---
+title: SceneExitPolicy
+sidebar_label: SceneExitPolicy
+description: "Clear vs Preserve, OnDestroy 시 레지스트리·소유권·틱"
+---
+
+# SceneExitPolicy
+
+`SceneInstaller`에만 있는 직렬화 필드로, **`OnDestroy`될 때 씬 레지스트리를 어떻게 둘지** 정합니다. 기본값은 **`Clear`** 입니다.
+
+---
+
+## `Clear` (기본)
+
+`OnDestroy`에서:
+
+- **`_sceneRegistry`** 비움
+
+- **`_sceneReferrals`** 비움
+
+- **`_ownershipMap`** 비움
+
+씬이 내려가면 씬 매니저 조회 결과가 **즉시 비워지는** 일반적인 모드입니다.
+
+---
+
+## `Preserve`
+
+`OnDestroy`에서:
+
+- **`_sceneRegistry`** — **비우지 않고 유지** (씬 전환 직후에도 메모리에 남음)
+
+- **`_ownershipMap`** — **비움**
+
+- **`_sceneReferrals`** — **비움**
+
+의도 :
+
+- **Additive** 등으로 이전 씬이 언로드된 뒤에도, 잠시 **이전 씬에서 등록된 의존성**을 참조해야 할 때.
+
+- 다음 `SceneInstaller`가 뜨기 전까지 **기존 맵을 이어 받는** 과도기를 허용합니다.
+
+:::info
+`_ownershipMap`을 비우는 이유 : 소유권은 씬 오브젝트 수명에 묶여 있어,  
+**`ScopeOwnerTracker` 콜백**이 씬 언로드 시 돌 때 `UnregisterByOwner`가 **빈 맵 때문에 조기 반환**하면,  
+**보존 중인 `_sceneRegistry` 항목이 의도치 않게 전부 지워지지 않게** 하기 위함입니다.
+:::
+
+---
+
+## 틱 정리 (정책과 무관)
+
+`SceneExitPolicy`와 관계없이 **`OnDestroy`에서 `TickableRegistry`는 항상 `ClearWithDestroy`** 됩니다.  
+씬 오브젝트가 사라진 뒤에도 `Update`에서 틱이 돌면 이는 **명확한 버그성 동작**이기 때문입니다.
+
+---
+
+## 실무 가이드
+
+- 단일 씬 로드만 쓰면 **`Clear`** 로 충분한 경우가 많습니다.
+
+- Additive로 **이전 씬 매니저 참조를 잠깐 유지**해야 하면 **`Preserve`** 를 검토합니다.
+
+- **`Preserve` + 정적 `SceneInstaller.Instance` 교체** 조합은,  
+로그에 나오는 경고 메시지를 참고해 **동시에 두 씬 Installer가 살아 있는 시간**을 최소화하는 것이 좋습니다.
+
+```csharp
+// 인스펙터에서 SceneInstaller의 Scene Exit Policy를 Preserve로 두는 경우:
+// — 씬 언로드 직후에도 Resolve가 잠시 이전 레지스트리를 볼 수 있음
+// — 다음 씬의 SceneInstaller가 Awake하면 새 인스턴스가 Instance가 됨
+```

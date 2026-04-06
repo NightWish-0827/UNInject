@@ -1,0 +1,94 @@
+﻿---
+title: 풀과 주입 수명
+sidebar_label: 풀
+description: InjectTargetFromPool, ReleaseTargetToPool, IPoolInjectionTarget, 필드 null 초기화
+---
+
+# 풀과 주입 수명
+
+반복 소비되는 `MonoBehaviour`는 주입된 참조가 **풀에 들어간 동안** 유효하지 않을 수 있습니다.  
+이 스코프는 **`IPoolInjectionTarget`** 과 두 API로 그 주기를 맞춥니다.
+
+```csharp
+public interface IPoolInjectionTarget
+{
+    void OnPoolGet();     // 재주입 직후
+    void OnPoolRelease(); // 풀 반환 직전, 필드를 null로 비우기 전
+}
+```
+
+---
+
+## 풀에서 꺼낼 때 : `InjectTargetFromPool`
+
+`ObjectInstaller.InjectTargetFromPool(target)`은 내부에서 **`TryInjectTarget(target, isReinjection: true)`** 를 호출합니다.
+
+- 씬·전역 필드가 다시 채워집니다 (해당 오브젝트의 `ObjectInstaller.Resolve` 체인 사용).
+
+- 주입이 **성공**하면 :
+  - **`IInjected.OnInjected`는 호출되지 않습니다.**
+  - 대상이 **`IPoolInjectionTarget`** 이면 **`OnPoolGet()`** 만 호출됩니다.
+
+```csharp
+public partial class PooledProjectile : MonoBehaviour, IPoolInjectionTarget
+{
+    [SceneInject] private ICombatBus _bus;
+
+    public void OnPoolGet()
+    {
+        // _bus 등이 방금 주입된 뒤 — 구독·카운터 리셋
+    }
+
+    public void OnPoolRelease()
+    {
+        // 필드가 null로 바뀌기 전에 이벤트 해제
+        _bus?.Unsubscribe(this);
+    }
+}
+
+// 사용처
+installer.InjectTargetFromPool(projectile);
+projectile.gameObject.SetActive(true);
+```
+
+`IPoolInjectionTarget`을 구현하지 않으면 재주입은 되지만 **풀 전용 콜백은 없습니다.**  
+이 경우에도 **`IInjected`는 재주입 경로에서 호출되지 않습니다.**
+
+:::info
+풀 다형성을 존중합니다.
+:::
+
+---
+
+## 풀에 보낼 때 : `ReleaseTargetToPool`
+
+`ReleaseTargetToPool(target)`의 순서는 고정되어 있습니다.
+
+1. 대상이 **`IPoolInjectionTarget`** 이면 **`OnPoolRelease()`** 를 호출합니다.
+
+2. 이 타입의 **`[GlobalInject]`** 필드를 순회하며 **setter로 `null`** 을 넣습니다.
+
+3. 같은 방식으로 **`[SceneInject]`** 필드를 **`null`** 로 만듭니다.
+
+로컬 **`[Inject]`** 베이크 필드는 이 API로 지우지 않습니다 (에디터 베이크·같은 오브젝트 트리 안의 참조용).
+
+```csharp
+public void ReturnToPool(PooledProjectile p)
+{
+    p.gameObject.SetActive(false);
+    installer.ReleaseTargetToPool(p);
+    pool.Release(p);
+}
+```
+
+`OnPoolRelease` 안에서는 아직 `_bus` 같은 참조가 살아 있으므로, **구독 해제·캐시 비우기**를 여기서 하는 것이 옳습니다.
+
+---
+
+## 설계 메모
+
+- **첫 인스턴스 생성** 직후에는 보통 **`InjectTarget` / `SpawnInjected`** 등 `isReinjection: false` 경로를 타므로,  
+**`IInjected.OnInjected`** 로 초기 한 번 후처리를 두고, **풀 재사용**은 **`OnPoolGet` / `OnPoolRelease`** 로 나누는 패턴이 흔합니다.
+
+- 동일 클래스가 `IInjected`와 `IPoolInjectionTarget`을 모두 구현해도,  
+재주입 분기에서는 **`OnInjected`가 아니라 `OnPoolGet`만** 실행됩니다.

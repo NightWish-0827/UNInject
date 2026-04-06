@@ -1,0 +1,95 @@
+﻿---
+title: UNInject Generator
+sidebar_label: Generator
+description: "UNInjectGenerator.dll, RoslynAnalyzer, TypeDataCache 등록 API, UNI001·UNI002"
+---
+
+# UNInject Generator
+
+:::info
+**공개 API가 아닌** 런타임 후크(`TypeDataCache`의 `[EditorBrowsable(Never)]` 메서드)와 에디터 진단과의 관계를 정리합니다.  
+사용자 콜백이 아니므로, 선택에 따라 읽지 않으셔도 무방합니다. 
+:::
+
+패키지 **`com.nightwishlab.uninject`** 에는 제너레이터 구현 소스 대신 **`Editor/UNInjectGenerator.dll`** 이 포함됩니다.  
+Unity는 해당 `.meta`의 **`RoslynAnalyzer`** 라벨을 통해 컴파일 파이프라인에 애널라이저/소스 제너레이터를 연결합니다.
+
+---
+
+## 런타임에 '플랜' 이 등록되는 방식
+
+`TypeDataCache`는 제너레이터가 생성한 코드가 **정적 생성자 또는 초기화 구간**에서 아래를 호출한다고 가정합니다.  
+
+:::danger
+사용자 코드가 아님으로, **커스텀이 아닌 경우 일반 게임 코드에서 호출하면 안 됩니다.**
+:::
+
+| 메서드 | 용도 |
+|--------|------|
+| `RegisterGeneratedGlobalFields(Type, List<CachedInjectField>)` | 타입별 `[GlobalInject]` 플랜 |
+| `RegisterGeneratedSceneFields(Type, List<CachedInjectField>)` | 타입별 `[SceneInject]` 플랜 |
+| `RegisterGeneratedFactory(Type, Func<...>)` | `[InjectConstructor]` 대응 **non-reflective 팩토리** |
+
+생성 코드는 위 API들을 통해 `_generatedGlobalCache`, `_generatedSceneCache`, `_generatedFactoryCache`를 채웁니다.  
+시그니처는 `Runtime/TypeDataCache.cs` 를 열어 확인하면 됩니다.
+
+```csharp
+// 제너레이터가 타입과 합쳐지려면 선언부에 partial 필수
+public partial class BootstrappedService : MonoBehaviour
+{
+    [GlobalInject] private ITimeService _time;
+}
+```
+
+`CachedInjectField`는 필드 이름, 타입,  
+**컴파일 타임에 만든 세터** `Action<object, object>`, `Optional`, v2.0부터 **`Id`(Named 바인딩)** 를 담습니다.  
+
+:::note
+매니지먼트 레이어가 동일 환경 - 중복 인스턴스의 경우.  
+일반적으로는 동작하지 않는 것이 옳지만, UNInject는 넓은 사용층을 대상으로 제작되었습니다.  
+효과적으로 휴먼 에러를 방지합니다. 
+:::
+---
+
+## `Create<T>()`와 팩토리
+
+`InstallerRegistryHelper.CreateAndInject<T>`는:
+
+1. `TryGetGeneratedFactory(typeof(T), out var factory)` 성공 시 → `factory(resolver)`로 인스턴스 생성 (제너레이터 플랜).
+
+2. 실패 시 → `GetInjectableConstructor` + `ConstructorInfo.Invoke` 폴백.
+
+폴백 시 예외 메시지에는 *“If the class is partial, verify the Generator DLL is referenced.”* 가 포함됩니다(`InstallerRegistryHelper.cs`).
+
+---
+
+## 컴파일 타임 진단: UNI001 / UNI002
+
+**IDE 영역**과 **에디터**에서 `partial` **키워드 누락 문제를 경고**합니다. 
+
+- **UNI001** — `partial` 누락 등으로 Roslyn 플랜 대신 폴백으로 가는 경우(필드 주입 쪽)와 관련.
+
+- **UNI002** — `[InjectConstructor]`가 있는데 `HasGeneratedFactory == false`인 경우와 관련.
+
+플레이 모드 진입 직전(`ExitingEditMode`)에 에디터 쪽 가드가 **경고 로그**로 비슷한 내용을 한 번 더 요약합니다.
+
+---
+
+## 어셈블리 정리
+
+| 어셈블리 | 역할 |
+|----------|------|
+| `UNInject.Runtime` | `TypeDataCache`, 속성, Installer 런타임 |
+| `UNInject.Editor` | `UNInjectFallbackGuard`, 베이크 검증, 그래프 창, 커스텀 인스펙터 |
+| `UNInjectGenerator.dll` | Roslyn — 생성 코드만 빌드 산출물에 합류 |
+
+`UNInject.Editor.asmdef`는 **`UNInject.Runtime`만** 참조하고, 제너레이터 DLL은 별도 프리컴파일 자산으로 존재합니다.
+
+---
+
+## 버전 메모
+  
+Named 바인딩(`Id`)·`InjectConstructor`·`RegisterGeneratedFactory`는 **v2.0 이후** 지원합니다.
+
+동일 인스턴스를 불가피하게 중복해야 하는 경우, 이를 효과적으로 활용할 수 있습니다.
+**일반적으로는 구조 개편을 권고드립니다.**

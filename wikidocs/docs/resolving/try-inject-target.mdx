@@ -1,0 +1,96 @@
+﻿---
+title: TryInjectTarget
+sidebar_label: TryInjectTarget
+description: "TryInjectTarget, InjectTarget, 성공·콜백, 재주입·풀"
+---
+
+# `TryInjectTarget` / `InjectTarget`
+
+`ObjectInstaller`가 **`MonoBehaviour` 한 인스턴스**에 대해 `[SceneInject]`·`[GlobalInject]` 필드를 채우는 핵심 API입니다.
+
+---
+
+## 시그니처
+
+```csharp
+public void InjectTarget(MonoBehaviour target);
+public bool TryInjectTarget(MonoBehaviour target, bool logWarnings = true, bool isReinjection = false);
+```
+
+- **`InjectTarget`** — `TryInjectTarget(target, logWarnings: true)`와 동일합니다.
+
+- **`TryInjectTarget`** — 성공 여부를 `bool`로 반환합니다.
+
+`target`이 `null`이면 `false`이고 아무 것도 하지 않습니다.
+
+---
+
+## 주입 순서
+
+1. `TypeDataCache.GetSceneInjectFields(type)`로 얻은 목록을 **순서대로** 처리합니다.  
+각 필드에 대해 **`Resolve(field.FieldType, field.Id)`** (즉 `ObjectInstaller`의 전체 Resolve 체인: 로컬 → 부모 → 씬 → 전역).
+
+2. 그다음 `GetGlobalInjectFields(type)`로 **동일**합니다.
+
+`CachedInjectField`에는 이름, 필드 타입, **컴파일/리플렉션으로 만든 `Setter`**, `Optional`, **`Id`** 가 들어 있습니다.
+
+---
+
+## 성공·실패 규칙
+
+- 해석 결과가 `null`이고 **`Optional`이 아니면** 해당 필드는 실패로 집계되고, `success`가 `false`가 됩니다.
+
+- `logWarnings == true`이면 실패한 필드마다 **`[ObjectInstaller]`** 프리픽스 경고 로그가 나갑니다.  
+(필드명, 타입, Named면 `id`, 대상 오브젝트 이름 포함).
+
+모든 필수 필드가 채워지면 `success == true`입니다.
+
+---
+
+## `IInjected` / 풀 재주입
+
+`success == true`일 때만 후처리가 호출됩니다.
+
+- **`isReinjection == false`** 이고 대상이 **`IInjected`** 이면 **`OnInjected()`** 를 호출합니다.
+
+- **`isReinjection == true`** 이고 대상이 **`IPoolInjectionTarget`** 이면 **`OnPoolGet()`** 을 호출합니다.
+
+즉 **첫 주입 완료**는 `IInjected`, **풀에서 다시 꺼낸 뒤 주입**은 `OnPoolGet` 경로로 나눕니다.
+
+:::info
+**굉장히. 매우 강력한 기능입니다.**  
+유니티 라이프사이클에서 지원할 수 없는 **"주입 완료 시점"** 을 펑션으로 제공합니다.  
+
+**객체 초기화 시점을 잡기 매우 용이합니다.**
+:::
+
+---
+
+## 프로파일링
+
+`UNINJECT_PROFILING` 심볼이 켜져 있으면 타입별로 주입에 걸린 시간이 **`UNInjectProfiler`** 에 기록됩니다.
+
+:::info
+성능 검증용 심벌임으로, 필요에 따라 사용하시면 됩니다.
+:::
+
+---
+
+## 호출 시점 예
+
+- **`Awake`** — `InjectGlobalDependencies`가 자식 전체에 대해 `HasAnyInjectField`가 참인 타입만 `TryInjectTarget` 호출.
+
+- **수동** — 스폰 직후 `InjectTarget(instance)`.
+
+- **풀** — `InjectTargetFromPool` → 내부적으로 `TryInjectTarget(..., isReinjection: true)`.
+
+```csharp
+// 스폰 직후 한 컴포넌트만
+installer.InjectTarget(spawnedView);
+
+// 실패 허용·로그 끄기
+if (!installer.TryInjectTarget(spawnedView, logWarnings: false))
+{
+    // 풀 반환 등
+}
+```

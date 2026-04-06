@@ -1,0 +1,125 @@
+﻿---
+title: 풀링 패턴
+sidebar_label: 풀링 패턴
+description: IPoolInjectionTarget, InjectTargetFromPool·ReleaseTargetToPool, ObjectInstaller·부모 스코프
+---
+
+# 풀링 패턴과 주입
+
+UNInject는 **특정 풀 구현체를 강제하지 않습니다.**  
+대신 `MonoBehaviour` 인스턴스가 **꺼내질 때·돌려보낼 때** 주입 필드를 맞추고,  
+콜백으로 전처리·후처리를 걸 수 있는 **두 API와 한 인터페이스**만 제공합니다.
+
+---
+
+## 제공 펑션
+
+| 요소 | 역할 |
+|------|------|
+| **`IPoolInjectionTarget`** | `OnPoolGet` / `OnPoolRelease` — 재주입 직후·필드 초기화 직전 |
+| **`InjectTargetFromPool`** | `TryInjectTarget(..., isReinjection: true)` — 씬·전역 필드 재해결 |
+| **`ReleaseTargetToPool`** | `OnPoolRelease` 호출 후 `[GlobalInject]`·`[SceneInject]` 필드를 `null`로 |
+
+로컬 **`[Inject]`** 베이크 필드는 `ReleaseTargetToPool`로 지우지 않습니다.
+
+---
+
+## 권장 흐름
+
+### 1) 첫 생성(프리팹에서 스폰)
+
+보통 **`SpawnInjected`**, **`InjectGameObject`**, 또는 **`InjectTarget`** 으로 첫 주입을 끝깁니다.  
+이때는 **`isReinjection == false`** 이므로, 대상이 **`IInjected`** 를 구현하면 **`OnInjected()`** 가 호출됩니다.
+
+```csharp
+// 풀 초기 워밍: 첫 인스턴스는 일반 주입 경로
+var unit = subtreeInstaller.SpawnInjected(unitPrefab);
+pool.Prewarm(unit);
+```
+
+### 2) 풀에서 꺼내 쓸 때
+
+인스턴스를 재사용하기 전에 **`ObjectInstaller.InjectTargetFromPool(instance)`** 를 호출합니다.  
+주입이 성공하면 **`IInjected`는 호출되지 않고**, **`IPoolInjectionTarget.OnPoolGet`** 만 호출됩니다.
+
+```csharp
+public class UnitPool
+{
+    public Unit Rent(ObjectInstaller scope)
+    {
+        var u = _stack.Count > 0 ? _stack.Pop() : scope.SpawnInjected(_prefab);
+        scope.InjectTargetFromPool(u);
+        u.gameObject.SetActive(true);
+        return u;
+    }
+```
+
+### 3) 풀에 반환할 때
+
+**`ReleaseTargetToPool`을 먼저** 호출한 뒤, 소유 풀에 넣습니다.  
+
+:::danger
+순서를 바꾸면 `OnPoolRelease` 이후에 여전히 살아 있는 참조로 로직이 도는 위험이 있습니다.
+:::
+
+```csharp
+    public void Return(ObjectInstaller scope, Unit u)
+    {
+        u.gameObject.SetActive(false);
+        scope.ReleaseTargetToPool(u);
+        _stack.Push(u);
+    }
+}
+```
+
+```csharp
+public partial class Unit : MonoBehaviour, IPoolInjectionTarget
+{
+    [SceneInject] private IBattleContext _ctx;
+
+    public void OnPoolGet()
+    {
+        // _ctx 등이 막 주입됨 — 구독·상태 리셋
+    }
+
+    public void OnPoolRelease()
+    {
+        // 필드가 null 되기 전 — 이벤트 해제
+    }
+}
+```
+
+---
+
+## `ObjectInstaller`와 부모 스코프
+
+**`_parentScope`** 를 지정하면 **싱글톤 씬·전역 체인 대신** 그 Installer의 `Resolve` 체인을 상위로 씁니다.  
+
+**풀 전용 서브트리**(예 : 월드 패킷 단위)를 격리할 때 유사합니다.
+
+:::danger
+- 틱·`IScopeDestroyable`은 **`Create<T>` 한정**이므로 풀된 `MonoBehaviour`와는 별개입니다.
+:::
+- 풀 루트에 붙은 `ObjectInstaller`가 파괴되면, 그 아래에서 **`Create<T>`** 로 만든 서비스의 **`OnScopeDestroy`** 가 호출됩니다.
+
+---
+
+:::danger
+## 주의할 점
+
+- **재주입 없이** 오래된 `[SceneInject]` 참조로 **`OnPoolGet`만** 호출하는 경우,  
+씬이 바뀌었는데 참조가 이전 씬 매니저를 가리키면 undefined 동작입니다.  
+**씬 전환 후 풀 인스턴스라면 반드시 `InjectTargetFromPool`(또는 전체 트리 재주입)** 을 고려하세요.
+
+- **`OnPoolRelease`에서 `_ctx`가 이미 null** 인 시점은 아닙니다. `OnPoolRelease` **끝난 뒤** SDK가 필드를 `null`로 만듭니다.
+:::
+---
+
+## 정리
+
+
+:::info
+풀 구현체(`Stack`, `ObjectPool<T>`, 서드파티)는 자유이고,  
+UNInject가 고정하는 것은 **`InjectTargetFromPool` / `ReleaseTargetToPool`과 `IPoolInjectionTarget` 계약**뿐입니다.  
+첫 스폰과 재사용의 콜백을 **`IInjected` vs `OnPoolGet`** 으로 나누면 의도가 분명해집니다.
+:::

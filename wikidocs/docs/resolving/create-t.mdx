@@ -1,0 +1,97 @@
+﻿---
+title: Create 제너릭 팩토리
+sidebar_label: "Create<T>"
+description: "IScope.Create, 팩토리·리플렉션, 필드 순서, ITickable, MonoBehaviour 비대상"
+---
+
+# `Create<T>()`
+
+:::info
+**Pure C#** (Service Layer) 지원에 관련된 내용입니다. **해당 영역은 매칭 미스가 매우 잦습니다.** 
+이해를 위한 **집중을 요구합니다**. 
+:::
+
+`IScope` 구현체는 **`T Create<T>() where T : class`** 로,  
+**`MonoBehaviour`가 아닌 클래스** 인스턴스를 **생성자 주입 + 필드 주입**으로 만듭니다.
+
+---
+
+## 대상이 되는 `T`
+
+- **`ScriptableObject`**, 순수 C# 서비스 클래스 등 **`class`**.
+
+- **`MonoBehaviour`에는 사용하지 않는 것이 계약**입니다.
+
+:::danger
+이전 분류에서도 계속해서 언급했지만, **`Create<T>` 는 `MonoBehaviour`를 상속받은 클래스에서 사용을 금지**합니다.  
+:::
+
+---
+
+## 생성 단계 (공통 파이프라인)
+
+1. **팩토리 우선** — `TypeDataCache.TryGetGeneratedFactory(typeof(T), out factory)` 성공 시  
+   `instance = (T)factory(resolver)`  
+   여기서 `resolver`는 호출한 **`IScope`마다 다른** `(Type, string id) => Component` 람다입니다.
+
+2. **리플렉션 폴백** — 팩토리가 없다면  
+   - `GetInjectableConstructor` — `[InjectConstructor]` 붙은 public 생성자 우선,  
+   없으면 **public 인스턴스 생성자가 정확히 하나**일 때만 자동 선택, 없으면 **`InvalidOperationException`**.  
+   - 각 파라미터에 대해 `[GlobalInject]` / `[SceneInject]`에서 **Id**를 읽어 `resolver(paramType, id)` 호출.  
+   **하나라도 `null`이면 예외** (필드의 `Optional`과 다름).
+
+3. **필드 주입** — 인스턴스가 만든 뒤  
+   - **`GetSceneInjectFields` 전부** → `resolver`로 채움. 필수 필드 실패 시 경고·`success` false.  
+   - **`GetGlobalInjectFields` 전부** → 동일.
+
+4. **`IInjected`** — 필드 단계에서 **필수 필드가 모두 성공**했을 때만 **`OnInjected()`** 호출.  
+일부 필드 미해결이면 **`OnInjected`는 호출되지 않음**.
+
+5. **`onCreated` 콜백** — 필드 단계 직후 **항상** 호출됨.  
+각 Installer는 여기서 **`ITickable` / `IFixedTickable` / `ILateTickable`** 자동 등록을 붙이므로,  
+필드 미스가 있어도 틱 인터페이스가 붙어 있으면 등록 시도는 이어짐.
+
+:::info
+순서 요약 : **생성자 → 씬 필드 → 전역 필드 → (성공 시) `OnInjected` → `onCreated`(틱 등록 등)**.
+:::
+
+---
+
+## 스코프별 `resolver` (Component 해석)
+
+| `Create` 호출주체 | `resolver`가 보는 순서 |
+|--------------------|-------------------------|
+| **`MasterInstaller`** | 전역 `Resolve(type,id)` → 없으면 `SceneInstaller.Instance`가 있으면 씬 `Resolve` |
+| **`SceneInstaller`** | 씬 `Resolve` → 없으면 전역 `Resolve` |
+| **`ObjectInstaller`** | **`ResolveInternal`**: 로컬 `_localRegistry` → 있으면 반환. 없으면 **`_parentScope.Resolve`**(부모 체인); 부모도 없으면 **`SceneInstaller.Instance.Resolve`** → 그다음 **`MasterInstaller.Instance.Resolve`** |
+
+같은 `T`라도 **어디서 `Create`를 호출하느냐**에 따라 생성자에 넣어 줄 `Component`가 달라질 수 있습니다.
+
+---
+
+## 예시
+
+```csharp
+public partial class ScoreModel
+{
+    [InjectConstructor]
+    public ScoreModel([GlobalInject] ITimeService time) { }
+
+    [SceneInject] private IWaveController _waves;
+    [GlobalInject] private IAudioService _audio;
+}
+
+// 어느 Installer에서 Create할지에 따라 _waves/_audio가 잡히는 레지스트리가 달라짐
+var model = someScope.Create<ScoreModel>();
+```
+
+---
+
+:::danger
+## 예외·경고
+
+- 생성자 파라미터 미스 → **`InvalidOperationException`** (로그만이 아님).
+
+- 필드 미스 + `Optional == false` → 경고, **`OnInjected` 생략**; **`onCreated`(틱 등록)은 그대로 호출**됨.  
+필수 의존성은 생성자로 끌어올리면 미스 시 예외로 조기 실패할 수 있어 디버깅이 수월합니다.
+:::

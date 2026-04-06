@@ -1,0 +1,100 @@
+﻿---
+title: Inject 속성
+sidebar_label: Inject 속성
+description: "[Inject], [GlobalInject], [SceneInject], 생성자 파라미터, Optional·Id"
+---
+
+# Inject 속성
+
+주입 대상은 **필드**와 **`Create<T>`생성자 주입의 파라미터**로 나뉩니다. 마커는 서로 다른 레이어를 가리킵니다.
+
+---
+
+## `[Inject]` (로컬)
+
+- **대상:** 인스턴스 필드만 (`Field`).
+
+- **역할:** 같은 `ObjectInstaller` 루트 **자식 트리** 안에서 타입이 맞는 `Component`를 에디터 **Bake**로 직렬화 연결합니다.
+
+- **관례:** **`[SerializeField]`와 함께** 써서 인스펙터에 참조가 저장되게 합니다.
+
+- **런타임:** `ObjectInstaller`의 자동 주입 루프(`InjectGlobalDependencies`)는 **`[GlobalInject]` / `[SceneInject]`만** 스캔합니다. **`[Inject]`만 있는 타입은 `HasAnyInjectField`에서도 제외**되어 그 루프를 타지 않습니다.
+
+```csharp
+public partial class View : MonoBehaviour
+{
+    [SerializeField, Inject] private Animator _anim;
+}
+```
+
+---
+
+## `[GlobalInject]` (전역)
+
+- **대상:** 필드 또는 **생성자 파라미터** (`Field | Parameter`).
+
+- **역할:** `MasterInstaller`가 관리하는 **전역 레지스트리**에서 `Resolve(fieldType, id)`로 `Component`를 가져와 대입합니다.
+
+- **`[SerializeField]` 없이 private 필드**에 붙이는 패턴이 전제입니다(런타임 전용).
+
+- **`Optional`:** `true`이면 해석 실패해도 실패로 집계하지 않고 경고도 생략합니다.
+
+- **`Id`:** Named 바인딩. 비어 있으면 무키. `[Referral]`·`BindType`·`Id`와 쌍을 맞춥니다.
+
+```csharp
+public partial class Hud : MonoBehaviour
+{
+    [GlobalInject] private IAudioService _audio;
+    [GlobalInject("music")] private IAudioService _music;
+    [GlobalInject(true)] private IOptionalHud _optionalHud;
+}
+```
+
+---
+
+## `[SceneInject]` (씬)
+
+- **대상:** 필드 또는 생성자 파라미터.
+
+- **역할:** `SceneInstaller` 레지스트리를 통해 해석합니다. 나머지는 `GlobalInject`와 동일한 옵션 모델(`Optional`, `Id`)입니다.
+
+```csharp
+public partial class BattleHud : MonoBehaviour
+{
+    [SceneInject] private IWaveController _waves;
+}
+```
+
+---
+
+## 생성자 파라미터 (`Create<T>` / `InjectConstructor`)
+
+생성자 인자에도 **`[GlobalInject]` / `[SceneInject]`** 를 붙일 수 있습니다.  
+한 파라미터에 둘 다 붙이는 경우는 설계상 드물고, 해석 시 **`GlobalInject.Id`가 있으면 그것을,  
+없으면 `SceneInject.Id`, 둘 다 없으면 무키**로 `resolver`에 넘깁니다.
+
+파라미터 타입은 **`Component`로 해석 가능한 타입**이어야 하며,  
+미스 시 **`InvalidOperationException`** 으로 생성 자체가 중단됩니다 (필드 주입과 달리 optional 처리 없음).
+
+```csharp
+public partial class GameSessionService
+{
+    [InjectConstructor]
+    public GameSessionService([GlobalInject] ITimeService time, [SceneInject] IWaveController waves)
+    {
+        // ...
+    }
+}
+```
+
+---
+
+## 정리 표
+
+| 속성 | 적용 대상 | 해석 스코프 |
+|------|-----------|-------------|
+| `[Inject]` | 필드 | Bake된 로컬 참조 (자동 `TryInjectTarget` 대상 아님) |
+| `[GlobalInject]` | 필드·파라미터 | 전역 → (`Create` 시 스코프별 resolver 체인) |
+| `[SceneInject]` | 필드·파라미터 | 씬 → (동일) |
+
+`ObjectInstaller.TryInjectTarget`은 **씬 필드 전부를 먼저**, **전역 필드 전부를 나중에** 채웁니다.

@@ -1,0 +1,78 @@
+﻿---
+title: 프로파일링
+sidebar_label: 프로파일링
+description: UNINJECT_PROFILING, TryInjectTarget 측정, PrintReport·Reset
+---
+
+# 주입 프로파일링
+
+`UNInjectProfiler`는 **`UNINJECT_PROFILING`** 스크립팅 심볼이 **정의된 경우에만** 컴파일됩니다.  
+심볼이 없으면 **이 파일 전체가 빠져** 런타임 오버헤드는 없다고 보면 됩니다.
+
+---
+
+## 켜는 방법
+
+**Project Settings → Player → Scripting Define Symbols** 에 **`UNINJECT_PROFILING`** 을 추가합니다.
+
+---
+
+## 무엇을 측정하나
+
+현재 SDK에서 **`RecordInjection`** 을 호출하는 곳은 **`ObjectInstaller.TryInjectTarget`** 의 **`Stopwatch` 블록**뿐입니다.
+
+- 타입별로 **호출 횟수**, **누적 ms**, **피크 ms**를 쌓습니다. 
+
+- **스레드 안전**을 위해 내부 **`lock`** 을 사용합니다.
+
+**`Create<T>`·다른 Installer의 주입 경로는 이 프로파일러에 합산되지 않습니다.**
+
+---
+
+## API
+
+| 메서드 | 역할 |
+|--------|------|
+| **`GetStats()`** | 타입 → `InjectionStat` 읽기 전용 복사본 |
+| **`PrintReport()`** | **`TotalMs` 내림차순** 테이블을 **`Debug.Log`** |
+| **`Reset()`** | 누적 테이블 비움 + 로그 한 줄 |
+
+**`SubsystemRegistration`** 에서 **`Reset()`** 이 한 번 호출되어, 도메인/서브시스템 기준으로 통계가 깨끗이 시작됩니다.
+
+---
+
+## 사용 예
+
+```csharp
+#if UNINJECT_PROFILING
+using UnityEngine;
+
+public static class InjectionDiagnosticsMenu
+{
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void AfterLoad()
+    {
+        // 개발 빌드에서만 버튼·치트로 호출해도 됨
+    }
+
+    public static void Dump()
+    {
+        UNInjectProfiler.PrintReport();
+    }
+}
+#endif
+```
+
+:::note 
+추후 에디터 도구 또한 제공될 예정입니다.
+:::
+---
+
+## 기타
+
+:::danger
+- 프로덕션/벤치마크 빌드에는 심볼을 빼십시오. 이전 항목과 동일한 케이스입니다.  
+
+불필요한 잉여 메모리 소모입니다. 
+:::
+- 병목은 **`TryInjectTarget`이 아닌 `Resolve`·레지스트리 크기**일 수 있으므로, 수치는 **부분 뷰**로만 해석하는 것이 안전합니다.

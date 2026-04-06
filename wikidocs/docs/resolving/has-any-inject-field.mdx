@@ -1,0 +1,53 @@
+﻿---
+title: HasAnyInjectField
+sidebar_label: HasAnyInjectField
+description: "TypeDataCache.HasAnyInjectField, 양성·음성 캐시, Inject와 무관"
+---
+
+# `HasAnyInjectField`
+
+`TypeDataCache`의 정적 메서드로, **해당 타입에 `[GlobalInject]` 또는 `[SceneInject]` 필드가 하나라도 있는지**를 빠르게 판별합니다.
+
+```csharp
+public static bool HasAnyInjectField(Type type);
+```
+
+---
+
+## 포함되는 것 / 안 되는 것
+
+- **포함:** 인스턴스 필드 중 **`[GlobalInject]`** 또는 **`[SceneInject]`** 가 하나라도 붙은 경우.
+
+- **포함하지 않음:** **`[Inject]` 만 있는 타입**은 **`false`** 입니다. 로컬 Bake 필드는 이 API와 무관합니다.
+
+따라서 `ObjectInstaller.InjectGlobalDependencies`는 **`[Inject]`만 있는 컴포넌트**는 이 분기에서 건너뛰고,  
+**`TryInjectTarget`을 호출하지 않습니다**. 로컬 전용 참조만 쓰는 뷰는 **Awake 자동 주입 루프에 안 탄다**고 이해하시면 됩니다.
+
+---
+
+## 캐시 동작
+
+- **양성(필드 있음):** `GetGlobalInjectFields` / `GetSceneInjectFields` 결과가 이미 리스트로 캐시됩니다.
+
+- **음성(없음):** `_noInjectTypes` 집합에 타입을 넣어, 이후 호출은 **즉시 `false`** (O(1)).
+
+도메인 리로드 시 정적 캐시는 **`SubsystemRegistration`** 훅에서 비워집니다.
+
+---
+
+## Roslyn 플랜과의 관계
+
+`GetGlobalInjectFields` / `GetSceneInjectFields`는 내부적으로 **생성된 플랜 캐시가 있으면 그것을 먼저** 반환합니다. `HasAnyInjectField`는 그 위에 얹힌 **“있음/없음”** 판별이므로, 플랜이 있는 타입은 리스트가 비어 있지 않다면 **`true`** 가 됩니다.
+
+---
+
+## 활용 시점
+
+- **`ObjectInstaller.InjectGlobalDependencies`** — 자식 전체 스캔 시 핫 패스.
+
+- 직접 호출해 **불필요한 `TryInjectTarget` 호출을 줄이고** 싶을 때.
+
+```csharp
+// [Inject]만 있는 MonoBehaviour는 HasAnyInjectField == false
+// → Awake의 InjectGlobalDependencies가 TryInjectTarget을 부르지 않음
+```

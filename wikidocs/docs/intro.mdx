@@ -1,0 +1,39 @@
+---
+id: intro
+title: UNInject란?
+sidebar_label: UNInject란?
+slug: /
+---
+
+# UNInject
+
+## Unity + Inject = UNInject 
+
+Unity를 통한 게임 개발에서 가장 높은 사용성과 퍼포먼스를 보장하는 **차세대** **D.I (의존성 주입) 솔루션** 입니다.  
+기존 **D.I 솔루션**들에서 퍼포먼스, 다형성. 그리고 가장 중요한 **사용성**을 보장하기 위해 고안되었습니다.
+
+- **가장 빠른 주입 속도** : **VContainer**와 동일 선상의 **상수 복잡도 O(1) 주입 지원**. (SnapShot, Bake... `Zenject`의 최대 20배) 
+
+- **Top Tier GC Alloc** : **Resolve** (Getter) 의 비용을 **자동으로 제거**합니다. **(Editor Time Bake, Roslyn CodeGen)**  
+
+- **엄청난 학습곡선 (Positive)** : **매우. 매우 쉬운 학습 곡선을 자랑합니다.** 따라서 후반 도입이 고려가 가능합니다.
+
+- **직관적인 패턴 강제** : Unity의 Scene을 보듯, **가장 직관적이고**, **높은 사용성**을 보장합니다. 
+
+- **3 Tier LifeCycle** : 유니티 엔진에서 최적화된, 각 용도에 알맞은 **세 가지 Scope 계층을 강제**합니다.
+
+---
+
+## 메인 프레임 설계도
+
+import ArchitectureDiagram from '@site/src/components/ArchitectureDiagram';
+
+<ArchitectureDiagram />  
+
+---
+
+## 성능 그래프 (Git Storage Critiqued)
+
+import PerformGraph from '@site/src/components/PerformGraph'; 
+
+<PerformGraph /> 

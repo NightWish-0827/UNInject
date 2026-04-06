@@ -1,0 +1,103 @@
+﻿---
+title: 런타임 Register
+sidebar_label: 런타임 Register
+description: "Register, Register(owner), ObjectInstaller Register<TBind>, Safety Net 재무장"
+---
+
+# 런타임 `Register`
+
+에디터에서 베이크한 리스트 외에, 플레이 중 **`IScope.Register`** 로 컴포넌트를 레지스트리에 올릴 수 있습니다.
+
+---
+
+## 공통 시그니처
+
+```csharp
+void Register(Component comp); // Owner - null 
+void Register(Component comp, MonoBehaviour owner); // Owner - !null 
+```
+
+- **`owner`가 null** — 소유권 추적 없이 등록만 합니다. 수명은 직접 `Unregister`하거나 스코프 파괴 시 정리 정책에 따릅니다.
+
+- **`owner`가 있음** — `owner`가 파괴될 때 해당 등록분을 자동으로 풀기 위해 **소유권 맵 + `ScopeOwnerTracker`** 가 붙습니다.  
+([소유권](/registering/scope-owner-tracker))
+
+---
+
+## `MasterInstaller`
+
+1. 컴포넌트 타입에서 **`[Referral]`** 만 읽습니다 (`SceneReferral`은 사용하지 않음).
+
+2. `RegisterTypeMappings`에 **`bindTypeOverride: referral?.BindType`**, **`id: referral?.Id ?? default`** 로 넘깁니다.
+
+3. **`_safetyNetArmed = true`** — 다음 Resolve 미스 시 **1회 재구성**을 다시 허용합니다.
+
+4. 타입에 **전역 필드용 Roslyn 생성 플랜이 없으면** 경고 로그 — `partial class` 권장 메시지.
+
+```csharp
+[Referral(typeof(IMyApi))]
+public partial class RuntimeGlobalService : MonoBehaviour, IMyApi { }
+
+void Boot(MasterInstaller master, RuntimeGlobalService svc)
+{
+    master.Register(svc, owner: svc); // owner 파괴 시 이 등록분 정리
+}
+```
+
+---
+
+## `SceneInstaller`
+
+1. **`[SceneReferral]`** 만 읽습니다. 
+
+2. 나머지는 전역과 동일 패턴이며, 대상 딕셔너리는 씬 레지스트리입니다.
+
+3. 씬 필드용 **Roslyn 씬 플랜**이 없으면 경고.
+
+---
+
+## `ObjectInstaller`
+
+1. **`RegisterInternal`** — `bindTypeOverride` 인자가 있으면 최우선.
+
+2. 없으면 타입에서 **`[Referral]`**, 없을 때만 **`[SceneReferral]`** 로 `BindType`·`Id` 결정.
+
+3. **`Register<TBind>(Component comp, MonoBehaviour owner = null)`**  
+어트리뷰트 없이 **`typeof(TBind)`를 `bindTypeOverride`로** 넘겨 **로컬 스코프에만** 인터페이스 바인딩을 걸 수 있습니다.
+
+```csharp
+public partial class LocalWidget : MonoBehaviour, IWidget { }
+
+// ObjectInstaller scope가 있을 때
+scope.Register<IWidget>(widgetComponent, owner: widgetComponent);
+```
+
+4. `owner`가 있으면 전역·씬과 동일하게 **`ScopeOwnerTracker`** 콜백으로 `UnregisterByOwner` 연결.
+
+5. **`MasterInstaller`/`SceneInstaller`와 달리** “Roslyn 플랜 없음” 경고는 이 경로에서 자동으로 찍히지 않습니다.
+
+:::info
+**등록 대상이 로컬 위주**이기 때문이며, 로컬 의존성 `Resolve` 는 **[SerializeField, Inject] 가 복잡도에서 유리**합니다.
+:::
+---
+
+## Pure C# `Create<T>`와의 관계
+
+`Register`는 **`Component`를 키 공간에 넣는 API**입니다.  
+순수 C# 인스턴스는 **`Create<T>()`** 로 만들고, 그 안에서 필요한 매니저는 이미 등록된 키로 **Resolve**됩니다.  
+
+:::danger
+`Create<T>`는 `MonoBehaviour` 대상이 아닙니다.
+:::
+
+---
+
+## Resolve 순서와의 연계 (참고)
+
+- **`ObjectInstaller.Resolve(type, id)`** — 로컬 → `_parentScope` 또는 `SceneInstaller` → `MasterInstaller`.
+
+- **`SceneInstaller.Create<T>`** 의 내부 resolver — 씬 먼저, 없으면 전역.
+
+- **`MasterInstaller.Create<T>`** — 전역 먼저, 없으면 씬.
+
+등록 위치를 잘못 잡으면 `Create`·필드 주입이 **다른 스코프**에서만 보이는 문제가 생깁니다.

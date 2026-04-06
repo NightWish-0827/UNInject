@@ -1,0 +1,178 @@
+﻿---
+title: 첫 씬 구성
+sidebar_label: 첫 씬 구성
+description: "MasterInstaller·SceneInstaller·ObjectInstaller 배치, 실행 순서, 최소 전역/씬 매니저 예제"
+---
+
+# 첫 씬 구성
+
+이 문서는 **첫 플레이 가능 씬**을 UNInject 관점에서 구성하는 절차를 설명합니다. 
+
+---
+
+## 권장 계층(개념)
+
+전형적인 구조는 다음과 같습니다.
+
+- **`[Master]`** — `DontDestroyOnLoad`로 유지되는 전역 오브젝트. **`MasterInstaller`** + `[Referral]` 전역 매니저들.
+
+- **`[Scene]`** — 현재 씬에만 존재. **`SceneInstaller`** + `[SceneReferral]` 씬 매니저들.
+
+- **`[Gameplay]`** — 플레이어, UI 등  
+필요 시 루트에 `ObjectInstaller`를 두고 자식에 `[Inject]` / `[GlobalInject]` / `[SceneInject]`를 사용.
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/getting-started/placeholder.png" width="250" />
+</div>
+---
+
+## 1. MasterInstaller 배치
+
+**역할:** `[Referral]`이 붙은 **전역 Manager**를 `_globalReferrals`에 베이크하고,  
+런타임에 `Dictionary<RegistryKey, Component>`로 조회(`Resolve`)합니다. 런타임에 씬 전체를 스캔하지 않습니다.
+
+**배치 방법 (둘 중 하나 또는 병행):**
+
+1. **씬에 빈 GameObject**를 만들고 `MasterInstaller`를 추가합니다. 이름은 예: `[Master Installer]`.
+
+2. 또는 **`Resources/MasterInstaller.prefab`**에 프리팹을 두면,  
+`BeforeSceneLoad` 부트스트랩이 인스턴스를 찾아 `DontDestroyOnLoad`합니다.
+
+```csharp
+// MasterInstaller.Bootstrap() 요약 (개념)
+// - 씬에 인스턴스 없으면 Resources.Load<MasterInstaller>("MasterInstaller")
+// - 성공 시 Instantiate 후 DontDestroyOnLoad
+// - RebuildRuntimeRegistry()로 베이크 리스트 → 런타임 딕셔너리
+```
+
+**플레이 전 필수:** 인스펙터 또는 컨텍스트 메뉴에서 **`Refresh Global Registry`** 를 실행해 `_globalReferrals`를 채웁니다.
+
+---
+
+## 2. 전역 매니저 예시 (`[Referral]`)
+
+전역에서 하나만 제공할 매니저에 클래스 레벨 `[Referral]`을 붙입니다. 인터페이스로 바인딩하려면 `BindType`을 지정합니다.
+
+```csharp
+using UnityEngine;
+
+[Referral(typeof(IAudioService))] // 구체 타입 자체를 받아오고 싶다면, 단순 [Referral] 을 사용하면 됩니다. 
+public class AudioService : MonoBehaviour, IAudioService
+{
+    public void PlayUiClick() { /* ... */ }
+}
+
+public interface IAudioService
+{
+    void PlayUiClick();
+}
+```
+
+Named 바인딩(v2.0)은 `[Referral(typeof(IEnemyManager), "waveA")]`처럼 **ID** 색인을 할 수 있습니다. (중복 인스턴스)  
+소비 측은 `[GlobalInject("waveA")]`와 쌍을 이룹니다.
+
+---
+
+## 3. SceneInstaller 배치
+
+**역할 :** 현재 씬의 `[SceneReferral]` 매니저만 `_sceneReferrals`에 베이크합니다. **`DontDestroyOnLoad를 사용하지 않으며`**,  
+씬 언로드 시 정책(`SceneExitPolicy`)에 따라 레지스트리를 비우거나 보존합니다.
+
+**배치 :** 씬 루트 근처에 GameObject를 만들고 `SceneInstaller`를 추가합니다. 예: `[Scene Installer]`.
+
+:::danger
+**주의 :** 씬에 `SceneInstaller`가 **둘 이상** 있으면,  
+나중에 깨어난 쪽이 이전 인스턴스를 **대체**하며 경고 로그가 출력됩니다. Additive 로딩에서는 **활성 씬당 하나**를 권장합니다.
+:::
+
+**플레이 전 필수 :** **`Refresh Scene Registry`** 로 `_sceneReferrals`를 채웁니다.
+
+---
+
+## 4. 씬 매니저 예시 (`[SceneReferral]`)
+
+```csharp
+using UnityEngine;
+
+[SceneReferral(typeof(IWaveController))]
+public class WaveController : MonoBehaviour, IWaveController
+{
+    public int CurrentWave => 1;
+}
+
+public interface IWaveController
+{
+    int CurrentWave { get; }
+}
+```
+
+---
+
+## 5. ObjectInstaller와 플레이 오브젝트
+
+**역할:** 붙어 있는 GameObject **서브트리**에 대해:
+
+- `Awake`에서 자식 `MonoBehaviour`를 스캔하고,  
+`TypeDataCache.HasAnyInjectField`가 참인 타입에 대해 **`Global`/`Scene` 주입**을 수행합니다.
+
+- `[Inject]` 로컬 필드는 **에디터 `Bake Dependencies`** 로 직렬화 연결을 만듭니다.
+
+**배치:** 플레이어 루트(또는 UI 서브트리 루트)에 `ObjectInstaller`를 추가합니다.
+
+```csharp
+using UnityEngine;
+
+public partial class HudView : MonoBehaviour
+{
+    // 씬 매니저에서 주입 (SerializeField 아님)
+    [SceneInject] private IWaveController _waves;
+
+    // 같은 ObjectInstaller 서브트리 안의 컴포넌트 ([Inject] + Bake)
+    [SerializeField, Inject] private Canvas _canvas;
+
+    private void Start()
+    {
+        // Awake 이후 필드 사용 가능
+        _ = _waves.CurrentWave;
+    }
+}
+```
+
+**상위 스코프:** `_parentScope`가 null이면 Resolve 체인은 기본적으로 **SceneInstaller → MasterInstaller**입니다.  
+중첩 로컬 스코프는 인스펙터에서 **`_parentScope`** 에 다른 `ObjectInstaller`를 지정합니다.
+
+---
+
+## 6. 실행 순서 정리
+
+같은 프레임 `Awake`에서:
+
+1. **`MasterInstaller` (`-1000`)** — 싱글톤 확정, `RebuildRuntimeRegistry`.
+
+2. **`SceneInstaller` (`-900`)** — 싱글톤 확정, 베이크 리스트가 있으면 `RebuildSceneRegistry`.
+
+3. **`ObjectInstaller` (`-500`)** — `InjectGlobalDependencies()`로 자식 주입.
+
+그 후 일반 MonoBehaviour의 `Awake`/`Start`에서 이미 주입된 필드를 사용할 수 있습니다.
+
+---
+
+## 7. 첫 씬 최소 체크
+
+- [x] `MasterInstaller` 존재 + **Refresh Global Registry** 완료
+
+- [x] 씬 매니저 사용 시 `SceneInstaller` 1개 + **Refresh Scene Registry** 완료
+
+- [x] `ObjectInstaller` 사용 시 **Bake Dependencies** 완료
+
+- [x] 주입 필드가 있는 타입은 **`partial`** 처리하여, **Roslyn Plan**을 사용할 수 있도록 유도
+
+자세한 점검 항목은 [체크리스트](/getting-started/checklist)를 따르세요.
+
+---
+
+## 참고 이미지 (Scene 배치)
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/getting-started/placeholder.png" width="250" />
+</div>

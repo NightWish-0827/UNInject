@@ -1,0 +1,110 @@
+﻿---
+title: Roslyn과 partial
+sidebar_label: Roslyn과 partial
+description: "소스 제너레이터 플랜 vs Expression Tree·리플렉션 폴백, partial 선언 요구"
+---
+
+# Roslyn과 `partial`
+
+UNInject는 **컴파일 타임**에 주입 플랜을 생성하는 **Roslyn Source Generator**(`UNInjectGenerator`)와,  
+플랜이 없을 때 동작하는 **런타임 폴백**(Expression Tree → `FieldInfo.SetValue`, 생성자는 `ConstructorInfo.Invoke`)을 함께 둡니다.  
+런타임 분기의 중심은 **`TypeDataCache`** 클래스이며, 구현은 패키지 **`Runtime/TypeDataCache.cs`** 에 있습니다.
+
+---
+
+## 조회 우선순위 (필드 주입)
+
+`TypeDataCache.GetGlobalInjectFields` / `GetSceneInjectFields`는 **같은 순서**로 동작합니다.
+
+1. **Roslyn 생성 플랜** — `_generatedGlobalCache` / `_generatedSceneCache`에 등록된 `List<CachedInjectField>`.  
+제너레이터가 만든 세터로 주입하므로 **IL2CPP에서도 리플렉션 없이** 대입 가능에 가깝게 동작합니다.
+
+2. **폴백 캐시** — `_globalInjectCache` / `_sceneInjectCache`.  
+필드마다 `CreateSetter(FieldInfo)`로 만든 `Action<object, object>`를 쓰며,  
+최초에는 Expression Tree 컴파일을 시도하고 실패 시 `FieldInfo.SetValue`로 떨어집니다.
+
+```csharp
+// 개념만: 실제 API는 TypeDataCache 내부 전용
+// Roslyn 플랜이 있으면 generated 캐시가 먼저 반환됨
+// 없으면 리플렉션으로 필드를 스캔해 폴백 캐시를 채움
+```
+
+**스레드:** 생성 코드의 정적 초기화와 `RuntimeInitializeOnLoadMethod`는 Unity 메인 스레드에서 실행되므로,  
+위 캐시는 **메인 스레드 전용**으로 설계되어 있습니다.
+
+---
+
+## 왜 `partial`인가?
+
+제너레이터는 **사용자 타입과 동일한 이름의 `partial` 클래스**에 보조 멤버(등록 코드 등)를 붙입니다.  
+타입이 `partial`이 아니면 생성물이 합쳐지지 않아 **플랜이 등록되지 않고** 자동으로 폴백 경로로 갑니다.
+
+권장 패턴:
+
+```csharp
+public partial class HudPanel : MonoBehaviour
+{
+    [GlobalInject] private IAudioService _audio;
+    [SceneInject] private IWaveController _waves;
+}
+```
+
+에디터에서 플레이 직전, **`UNInjectFallbackGuard`**(`Editor/UNInjectFallbackGuard.cs`)가 다음을 검사합니다.
+
+- `[GlobalInject]` / `[SceneInject]` 필드가 있는데 생성 플랜이 없으면 → Expression Tree 폴백 경고  
+(문서화된 메시지: IL2CPP에서 `FieldInfo.SetValue`까지 갈 수 있음).
+
+- `[Referral]` / `[SceneReferral]`이면서 **같은 타입에 주입 필드도 있는데**  
+플랜이 없고 런타임 `Register()`를 쓸 가능성이 있으면 → 별도 경고.
+
+- `[InjectConstructor]`가 있는데  
+`TypeDataCache.HasGeneratedFactory`가 false면 → **UNI002** 관련 안내와 함께 `ConstructorInfo.Invoke` 폴백 경고.
+
+컴파일 타임 진단 코드로 **UNI001**, **UNI002**가 Generator 쪽에서 발행됩니다.
+
+---
+
+## 생성자 주입(`Create<T>()`)과 팩토리 플랜
+
+`InstallerRegistryHelper.CreateAndInject<T>`(`Runtime/InstallerRegistryHelper.cs`)는 다음 순서입니다.
+
+1. `TypeDataCache.TryGetGeneratedFactory(type, out factory)` — Roslyn이 등록한 **non-reflective 팩토리**가 있으면 `factory(resolver)`로 인스턴스 생성.
+
+2. 없으면 `TypeDataCache.GetInjectableConstructor` → `[InjectConstructor]` 우선,  
+없으면 **public 생성자가 하나**일 때만 자동 선택 → **`ConstructorInfo.Invoke`**.
+
+따라서 IL2CPP 배포에서는 **`public partial class` + 생성 팩토리 생성**이 없으면 스트리핑·성능 이슈가 생길 수 있습니다.  
+
+이는 **성능 지향 디자인에서 비롯된**, 트레이드오프. 성능을 보장하기 위한 절차입니다.
+
+```csharp
+// 순수 C# 서비스 예시 (MonoBehaviour에는 [InjectConstructor] 비권장 — XML 주석 기준)
+public partial class UserService
+{
+    [InjectConstructor]
+    public UserService([GlobalInject] IConfig config)
+    {
+        // ...
+    }
+}
+```
+
+---
+
+## 캐시 초기화
+
+`TypeDataCache`는 `RuntimeInitializeLoadType.SubsystemRegistration`에서 정적 캐시를 비웁니다.  
+도메인 리로드 설정과 무관하게 **오염된 정적 상태**를 줄이기 위함입니다.
+
+---
+
+## 패키지에서의 위치
+
+| 항목 | 경로 (패키지 루트 기준) |
+|------|-------------------------|
+| 런타임 캐시·폴백 | `Runtime/TypeDataCache.cs` |
+| 생성자+필드 조합 | `Runtime/InstallerRegistryHelper.cs` |
+| 속성 정의 | `Runtime/CoreAttributes.cs` |
+| 플레이 전 경고 | `Editor/UNInjectFallbackGuard.cs` |
+| 제너레이터 바이너리 | `Editor/UNInjectGenerator.dll` (소스는 DLL로 제공되며, 코드 스니펫은 미공개입니다.) |
+

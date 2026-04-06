@@ -1,0 +1,79 @@
+﻿---
+title: 폴백 경로
+sidebar_label: 폴백 경로
+description: Expression·FieldInfo 세터, 리플렉션 생성자, 세이프티 넷 1회 재구성
+---
+
+# 폴백 경로
+
+Roslyn 생성 플랜·팩토리가 **없을 때** 런타임은 **리플렉션·Expression** 기반 경로로 동작합니다.  
+기능은 유지되지만 **첫 빌드 비용·IL2CPP 제약**이 커질 수 있습니다.
+
+---
+
+## 필드 세터: `CreateSetter`
+
+생성 플랜이 없는 타입에 대해 `GetGlobalInjectFields` / `GetSceneInjectFields`는 **처음 조회 시** 다음을 수행합니다.
+
+1. 상속 체인을 따라 **인스턴스 필드**를 모읍니다(`GetAllInstanceFields`).
+
+2. 각 `[GlobalInject]` / `[SceneInject]` 에 대해 **`CreateSetter(field)`** 로 **`Action<object, object>`** 를 만듭니다.
+
+`CreateSetter` 내부 :
+
+- 기본: **`Expression`으로 필드 대입 람다를 만들고 `Compile()`** 합니다.
+
+- **예외 발생 시**(AOT/IL2CPP 등에서 컴파일 실패 포함): **`(t,v) => field.SetValue(t, v)`** 로 폴백합니다.
+
+한 번 만들어진 리스트는 **`_globalInjectCache` / `_sceneInjectCache`** 에 넣어 **이후 조회는 캐시 히트**입니다.  
+비용은 주로 **타입당 첫 호출**에 몰립니다.
+
+---
+
+## 생성자: `GetInjectableConstructor` + `Invoke`
+
+`CreateAndInject`에서 **`TryGetGeneratedFactory`가 실패**하면:
+
+- **`GetInjectableConstructor`** 로 `ConstructorInfo`를 고릅니다(결과는 **`_constructorCache`** 에 센티넬 포함 저장). 
+
+- 파라미터마다 `resolver`로 의존성을 채우고 **`ctor.Invoke(args)`** 합니다.
+
+이 경로는 **항상 리플렉션 생성**이므로 IL2CPP에서는 **스트리핑**과 맞물립니다.
+
+---
+
+## 세이프티 넷(성능 부가 복잡도)
+
+`MasterInstaller` / `SceneInstaller`의 **`ResolveByKey`** 는 **첫 미스**에서 **`Rebuild*RegistryCore`** 를 한 번 호출한 뒤,  
+다시 조회할 수 있습니다.
+
+:::info
+- ***정상 히트 위주 프로젝트에서는 거의 타지 않습니다.***
+:::
+- **연속 미스**에는 두 번째부터 재구성을 하지 않아 **무한 루프**를 피합니다.
+
+---
+
+## 도메인 리로드
+
+`TypeDataCache`는 **`SubsystemRegistration`** 에서 **정적 캐시 전부를 비웁니다**.  
+에디터에서 도메인 리로드를 끈 경우 등 **특수 환경**에서는 캐시 정책을 염두에 두면 됩니다.  
+
+:::tip
+**Enter Play Mode Custom을 시도하십시오.**  
+해당 부근에서 로슬린 컴파일 및 요구 컴파일만 활성화 하면 정상 작동합니다.  
+현재는 안전망만 도입되어 있습니다.
+:::
+
+---
+
+## 정리
+
+| 폴백 | 언제 | 특징 |
+|------|------|------|
+| Expression → SetValue | 세터 생성 실패 시 | IL2CPP에서 Compile 실패 가능 |
+| 필드 플랜 없음 | partial/제너레이터 미적용 | 타입별 첫 조회 비용↑ |
+| `ConstructorInfo.Invoke` | 팩토리 플랜 없음 | `Create<T>` IL2CPP 취약 |
+| 세이프티 넷 | 레지스트리 미스 1회 | 1회 재빌드 비용 |
+
+**폴백 가드**(Diagnostics)가 플레이 직전에 같은 조건을 경고하는 이유와 연결됩니다.

@@ -1,0 +1,89 @@
+﻿---
+title: 의존성 그래프
+sidebar_label: 의존성 그래프
+description: GraphView — Installer, Referral, Inject Target, 엣지 색(플랜 여부)
+---
+
+# 의존성 그래프 창
+
+:::info
+특정 유니티 버전에 따라 시각화 툴이 작동하지 않을 수 있습니다.  
+`IMGUI`로의 마이그레이션이 계획되어 있습니다.
+:::
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/getting-started/graph.png" width="1200" />
+</div>
+
+**메뉴:** `Window > UNInject > Dependency Graph`
+
+Unity **GraphView(Experimental)** 기반 에디터 창으로, **현재 에디터 상태**에서의 UNInject 구조를 대략적으로 시각화합니다.
+
+---
+
+## 도구 모음
+
+- **Refresh** — 지금 씬·어셈블리 상태로 그래프를 다시 그립니다.
+
+- 툴바 범례 라벨: **Global / Scene / Inject Target / Missing** (노드 색 구분용 텍스트).
+
+---
+
+## 노드 종류
+
+1. **Installer**
+   - **`MasterInstaller [Global]`**, **`SceneInstaller [Scene]`** 고정 레이아웃의 두 노드.
+   
+   - 출력 포트 **`Scope`** 에서 각 Referral 입력으로 연결됩니다.
+
+2. **Referral**
+   - **`Resources.FindObjectsOfTypeAll<Component>`** 로 스캔한 뒤, **`gameObject.scene.IsValid()`** 인 것만 대상.
+   
+   - 타입에 **`[Referral]`** 또는 **`[SceneReferral]`** 가 있어야 노드로 올라옵니다.
+   
+   - Named면 라벨에 **`[id:"…"]`** 가 붙습니다.
+   
+   - 전역은 위쪽 줄, 씬은 아래쪽 줄에 세로로 나열하는 식으로 배치됩니다.
+   
+   - 서브 텍스트로 **해당 컴포넌트가 붙은 `GameObject` 이름**을 보여 줍니다.
+
+3. **Inject Target**
+   - 스캔되는 게임 어셈블리의 타입 중 **`[GlobalInject]` / `[SceneInject]`** 필드가 하나라도 있는 **`MonoBehaviour` 후보**  
+   (추상/인터페이스 제외).
+   
+   - 노드 제목 형식: **`[Inject] TypeName`** (로컬 Bake **`[Inject]`** 과 혼동하지 말 것 — 여기서는 “주입 대상 타입” 표시용 라벨).
+   
+   - **해당 타입이 요구하는 모든 (필드 타입, Id) 쌍**에 대해, 같은 키의 Referral 출력 포트가 있으면 엣지를 긋습니다.
+   
+   - **하나라도 매칭되는 Referral이 없으면** 노드 색이 **Missing(빨간 계열)** 입니다.  
+   모두 연결되면 **Inject Target 기본 색(노란 계열)**.
+
+---
+
+## 엣지 색 (초록 / 노랑)
+
+Referral → Inject Target 연결마다 엣지를 그릴 때 :
+
+- 해당 **Inject Target 타입**에 대해, 해당 필드가 **Global이면** `HasGeneratedGlobalPlan(type)`,  
+**Scene이면** `HasGeneratedScenePlan(type)` 를 봅니다.
+
+- **플랜이 있으면 엣지를 초록**, 없으면 **노랑**으로 칠합니다.  
+   “그래프 상 연결은 되어 있지만 Roslyn 생성 세터 경로가 없음”을 한눈에 구분하기 위함입니다.
+
+---
+
+## 스캔 범위
+
+- Referral 노드: **로드된 씬에 존재하는 컴포넌트**(유효한 씬 한정).
+
+- Inject 타입: `UNInjectEditorUtility.ShouldSkipAssembly` 를 통과한 어셈블리의 타입들.
+
+---
+
+## 활용 팁
+
+- **베이크 직후 Refresh** 하면 Referral 쪽이 최신에 가깝습니다.
+
+- **Named 바인딩**은 노드 라벨과 **`RegistryKey(Type, Id)`** 매칭으로 엣지가 생기므로, Id 불일치면 Missing으로 떨어집니다.
+
+- 유니티에 의존하는 현재 구조상, 그래프가 **런타임 `Register`만 있는 동적 매핑**을 전부 반영하지는 못합니다.

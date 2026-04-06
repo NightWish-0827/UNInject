@@ -1,0 +1,109 @@
+﻿---
+title: Referral 속성
+sidebar_label: Referral 속성
+description: "[Referral], [SceneReferral], BindType·Id 오버로드와 등록·소비 쌍"
+---
+
+# Referral 속성
+
+전역·씬 **매니저 레이어**를 레지스트리에 올리려면 클래스에 마커 어트리뷰트를 붙입니다.
+
+- **`[Referral]`** — 전역 스코프(`MasterInstaller`)가 베이크·런타임 등록의 대상으로 삼는 매니저.
+
+- **`[SceneReferral]`** — 씬 스코프(`SceneInstaller`) 전용 매니저.
+
+둘 다 **클래스**에만 붙일 수 있으며, 실제 인스턴스는 **`Component`(보통 `MonoBehaviour`)** 여야 합니다.  
+순수 C# 타입은 여기에 직접 올리지 않고 [`Create<T>()`](/resolving/create-t) 경로로 다룹니다.
+
+---
+
+## 생성자 오버로드
+
+**`ReferralAttribute` / `SceneReferralAttribute`** 공통 :
+
+| 형태 | 의미 |
+|------|------|
+| 무인자 | `BindType` 없음, `Id` 빈 문자열 → **무키** 바인딩. 등록 시 **구체 컴포넌트 타입**을 키의 한 축으로 쓰는 전체 매핑 경로로 감니다. |
+| `(Type bindType)` | 주로 **인터페이스·추상 타입**으로 노출할 때. 해당 타입 하나만 키로 등록(호환 시). |
+| `(string id)` | **Named** 바인딩 키만 지정. |
+| `(Type bindType, string id)` | 인터페이스(또는 추상) + Named 조합. |
+
+`BindType`이 **구체 구현 타입에 할당 가능한지** 검사하고, 아니면 경고 후 전체 매핑(구체·인터페이스·베이스 체인)으로 넘어갑니다.
+
+---
+
+## 소비 측과의 커플링
+
+| 등록(매니저) | 주입 필드 |
+|--------------|-----------|
+| `[Referral]` + 선택적 `BindType` / `Id` | `[GlobalInject]` / `[GlobalInject("id")]` |
+| `[SceneReferral]` + 동일 | `[SceneInject]` / `[SceneInject("id")]` |
+
+`[GlobalInject]`·`[SceneInject]`의 **`Id`** 가 비어 있으면 무키와 동일하고,  
+Named를 쓰면 **`[Referral(typeof(IFoo), "a")]`** 와 **`[GlobalInject("a")]`** 가 같은 키 공간을 씁니다.
+
+---
+
+## 예시: 추상 타입으로 노출
+
+**공급 :**
+
+```csharp
+using UnityEngine;
+
+[Referral(typeof(IAudioService))] // [Referral(typeof(IInterface))]를 통해 추상 타입 공급 
+public class AudioService : MonoBehaviour, IAudioService
+{
+    public void Play(string clipId) { }
+}
+
+public interface IAudioService
+{
+    void Play(string clipId);
+}
+```
+
+**소비 :**
+
+```csharp
+public partial class Hud : MonoBehaviour
+{
+    [GlobalInject] private IAudioService _audio;
+}
+```
+
+---
+
+## 예시: 동일 인터페이스·다른 인스턴스 (Named)
+
+**공급 :**
+
+```csharp
+[Referral(typeof(IWaveSource), "A")] // A 네이밍 공급
+public class WaveSourceA : MonoBehaviour, IWaveSource { }
+
+[Referral(typeof(IWaveSource), "B")] // B 네이밍 공급
+public class WaveSourceB : MonoBehaviour, IWaveSource { }
+```
+
+**소비 :**
+
+```csharp
+public partial class Mixer : MonoBehaviour
+{
+    [GlobalInject("A")] private IWaveSource _a; // A 네이밍 소비
+    [GlobalInject("B")] private IWaveSource _b; // B 네이밍 소비
+}
+```
+
+---
+
+## `ObjectInstaller` 로컬 등록과의 관계
+
+`ObjectInstaller.Register` 계열은 타입에서 **`[Referral]`을 먼저**, 없으면 **`[SceneReferral]`** 를 읽어 `BindType`·`Id`를 결정합니다.  
+**`Register<TBind>(comp)`** 로 넘기면 어트리뷰트보다 **명시적 `TBind`가 우선**합니다.
+
+에디터 베이크로 채우는 **`[Referral]` / `[SceneReferral]`** 목록,  
+런타임 `Register`는 **같은 `RegisterTypeMappings` 규칙**을 공유합니다.
+
+

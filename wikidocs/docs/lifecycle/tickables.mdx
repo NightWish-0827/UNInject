@@ -1,0 +1,113 @@
+﻿---
+title: ITickable 계열
+sidebar_label: Tickable
+description: Update·FixedUpdate·LateUpdate 위임, 스코프 소유권, 스냅샷·UnregisterTickable
+---
+
+# `ITickable`, `IFixedTickable`, `ILateTickable`
+
+순수 C# 서비스는 Unity 루프에 직접 올라가지 않으므로,  
+**`IScope.Create<T>()`** 로 만든 인스턴스가 아래 인터페이스를 구현하면,  
+**해당 스코프의 Installer `MonoBehaviour`** 가 자신의 **`Update` / `FixedUpdate` / `LateUpdate`** 에서 위임 호출합니다.
+
+```csharp
+public interface ITickable     { void Tick(); }
+public interface IFixedTickable { void FixedTick(); }
+public interface ILateTickable  { void LateTick(); }
+```
+
+**`MonoBehaviour`에는 `Create<T>`를 쓰지 않는 것이 계약**이므로,  
+이 자동 등록은 **`ScriptableObject`· Pure C# 클래스** 같은 **`Non - MonoBehaviour` 서비스**를 위한 기능입니다.
+
+---
+
+## 자동 등록
+
+`InstallerRegistryHelper.CreateAndInject` 마지막에 넘기는 **`onCreated`** 가 각 스코프에서  
+**`RegisterTickables`** 로 연결되어 있습니다.  
+
+한 객체에 대해 :
+
+- `ITickable`이 있으면 Update 틱 리스트에 추가
+
+- `IFixedTickable`이 있으면 Fixed 리스트에
+
+- `ILateTickable`이 있으면 Late 리스트에
+
+**여러 인터페이스를 동시에 구현**하면 **해당하는 루프마다 모두** 호출됩니다.
+
+```csharp
+public partial class EnemyBrainService : ITickable, IFixedTickable
+{
+    [InjectConstructor]
+    public EnemyBrainService([SceneInject] ITargetSelector selector) { }
+
+    public void Tick()
+    {
+        // 매 Update — 이 Installer가 살아 있는 동안만
+    }
+
+    public void FixedTick()
+    {
+        // 매 FixedUpdate
+    }
+}
+
+// 같은 스코프에서 생성해야 이 Installer의 Update로 붙음
+var brain = sceneInstaller.Create<EnemyBrainService>();
+```
+
+---
+
+## 어느 스코프의 틱인가
+
+- **`MasterInstaller`**: `DontDestroyOnLoad` 쪽 수명. 전역에 가깝게 매 프레임 돕니다.
+
+- **`SceneInstaller`**: 씬에 붙은 Installer. 씬이 사라지면 **`OnDestroy`에서 틱 레지스트리 정리**.
+
+- **`ObjectInstaller`**: 해당 서브트리 Installer가 파괴될 때까지.
+
+:::danger
+중요한 규칙 : **등록은 `Create`를 호출한 그 스코프에만** 됩니다. 부모 Installer의 Update로 **전파되지 않습니다.**
+:::
+---
+
+## 스냅샷과 `UnregisterTickable`
+
+내부적으로 틱마다 **리스트의 스냅샷**을 만들고, 그 배열을 순회합니다.  
+그래서 **`Tick()` 실행 도중** `UnregisterTickable`을 호출해도 **현재 프레임 순회는 그대로**이고,  
+**변경은 다음 프레임부터** 반영됩니다.
+
+```csharp
+public partial class TimedService : ITickable
+{
+    private IScope _owner;
+
+    public void BindOwner(IScope owner) => _owner = owner;
+
+    public void Tick()
+    {
+        if (_shutdown)
+            _owner.UnregisterTickable(this);
+    }
+
+    private bool _shutdown;
+}
+```
+
+각 `IScope` 구현체는 **`UnregisterTickable(ITickable / IFixedTickable / ILateTickable)`** 오버로드를 노출합니다.  
+스코프가 파괴되면 목록은 자동으로 비워지므로 **명시 해제는 선택 사항**입니다.
+
+---
+
+## 틱 vs `IScopeDestroyable`
+
+스코프 `OnDestroy` 시 **`ClearWithDestroy`** 에서 **`IScopeDestroyable.OnScopeDestroy`가 먼저** 불리고, 이후 틱 리스트가 비워집니다.  
+“마지막 프레임 틱 이후 정리”가 아니라 **Installer 파괴 직전 정리**로 생각하는 방향이 안전합니다.
+
+---
+
+## IL2CPP·생성자 보존
+
+에디터 가드에서 안내하듯, **`Create<T>()`** 가 리플렉션 생성자 폴백을 타는 경우 IL2CPP에서 스트리핑 이슈가 생길 수 있습니다.  
+**`partial` + Roslyn Code Gen 플랜**이 있으면 팩토리 경로가 우선 유효합니다.

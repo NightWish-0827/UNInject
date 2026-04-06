@@ -1,0 +1,92 @@
+﻿---
+title: Installer 인스펙터
+sidebar_label: Installer 인스펙터
+description: "ObjectInstallerEditor, MasterInstallerEditor, SceneInstallerEditor UI"
+---
+
+# Installer 인스펙터
+
+:::info
+**공개 API가 아닌** 에디터 커스텀 컴포넌트와 관련된 내용입니다. 
+사용자 콜백이 아니므로, 선택에 따라 읽지 않으셔도 무방합니다. 
+:::
+
+세 Installer 모두 **`Editor/ObjectInstallerEditor.cs`** 한 파일에 `CustomEditor`가 정의되어 있습니다.
+
+| 에디터 클래스 | 대상 |
+|---------------|------|
+| `ObjectInstallerEditor` | `ObjectInstaller` |
+| `MasterInstallerEditor` | `MasterInstaller` |
+| `SceneInstallerEditor` | `SceneInstaller` |
+
+---
+
+## `ObjectInstallerEditor`
+
+**상단 버튼**
+
+- **Bake Dependencies** — `installer.BakeDependencies()` 호출. 배경색 연녹색 강조.
+
+**요약 패널 (`DrawReferenceOverview`)**
+
+같은 `ObjectInstaller` 서브트리의 `MonoBehaviour`를 모두 스캔해 필드 메타를 집계합니다.
+
+1. **Local Dependencies `[Inject]`**  
+   - `SerializedObject` / `SerializedProperty`로 object reference 읽기, 실패 시 `field.GetValue` 폴백.  
+   - `N / M fields linked` 표시, 각 줄에 `[OK]` / `[Missing]`.
+
+2. **Scene Dependencies `[SceneInject]`**  
+   - `IsTypeRegisteredInScene(fieldType)`: 씬의 **`SceneInstaller`** 를 `FindObjectOfType`으로 찾고, `_sceneReferrals` 배열에 **할당 가능한 컴포넌트 타입**이 있는지 검사(`fieldType.IsAssignableFrom(comp.GetType())`).  
+   - `[Registered]` / `[Optional — not registered]` / `[Not in scene registry]`.
+
+3. **Global Dependencies `[GlobalInject]`**  
+   - `IsTypeRegisteredInMaster`: 동일하게 **`MasterInstaller`** 의 `_globalReferrals` 배열을 검사.  
+   - `[Registered]` / `[Optional — not registered]` / `[Not in registry]`.
+
+**기본 인스펙터**
+
+- `serializedObject` 이터레이터로 **`m_Script` 제외**한 모든 프로퍼티 표시 — `_parentScope` 등 일반 필드 포함.
+
+```csharp
+// 인스펙터가 “등록됨”을 판단하는 방식 (개념)
+// Global: MasterInstaller._globalReferrals 열거
+// Scene: SceneInstaller._sceneReferrals 열거
+// fieldType.IsAssignableFrom(comp.GetType())
+```
+
+:::note
+Named 바인딩(`Id`)까지 인스펙터가 정밀 검증하는지는 **현재 구현이 타입 할당만** 보는지 확인이 필요합니다.  
+씬/전역 리스트에 동일 인터페이스가 여러 개일 때는 런타임 `Resolve` 규칙을 함께 참고하세요.
+:::
+
+---
+
+## `MasterInstallerEditor`
+
+- **`Refresh Global Registry`** 버튼 → `RefreshRegistry()`.
+
+- **Global Registry** HelpBox: `_globalReferrals.arraySize`.
+
+- `_globalReferrals` 프로퍼티 필드는 **`GUI.enabled = false`** 로 읽기 전용 표시.
+
+- `m_Script` 숨김.
+
+---
+
+## `SceneInstallerEditor`
+
+- **`Refresh Scene Registry`** 버튼 → `RefreshSceneRegistry()`.
+
+- **Scene Registry** HelpBox: `_sceneReferrals` 동일 패턴.
+
+- `_sceneReferrals` 읽기 전용, `m_Script` 숨김.
+
+---
+
+## 다른 에디터 창과의 관계
+
+- **Dependency Graph :** `Window > UNInject > Dependency Graph` — `UNInjectGraphWindow.cs`. 
+
+- **베이크 검증 :** `Window > UNInject > Validate Bake` — `UNInjectBakeValidator.cs` (빌드 전처리에서도 동일 로직).
+
+자세한 진단 도구는 Diagnostics 섹션 문서를 참고하세요.

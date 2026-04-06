@@ -1,0 +1,98 @@
+﻿---
+title: MasterInstaller
+sidebar_label: MasterInstaller
+description: "전역 스코프, Bootstrap, Instance, Safety Net, Create 해석 순서"
+---
+
+# MasterInstaller (전역 스코프)
+
+`[Referral]` 매니저를 **게임 전역**에서 `Resolve`할 수 있게 하는 Installer입니다.  
+런타임에는 베이크된 목록만으로 딕셔너리를 만들고, **플레이 중 씬 전체를 스캔하지 않습니다.**
+
+---
+
+## 수명과 인스턴스
+
+- **`DontDestroyOnLoad`** — 부트스트랩 경로나 `Awake`에서 인스턴스가 정해지면 해당 `GameObject`가 파괴되지 않는 한 유지됩니다.
+
+- **`Instance` 게터** — `_instance`가 비어 있으면 `FindObjectOfType<MasterInstaller>()`로 한 번 찾습니다.  
+플레이 중에도 없으면 경고 로그 후 `null`일 수 있습니다. 안전 보장을 위한 **최소한의 트레이드오프** 입니다. 
+
+- **중복 `Awake`** — 먼저 잡힌 쪽이 싱글톤이 되고, 나중에 깨어난 컴포넌트는 **`Destroy(gameObject)`** 로 제거됩니다.  
+단일 인스턴스가 강제됩니다. **씬에 두 개의 Master Installer를 설치하지 마십시오.** 
+
+---
+
+## 부트스트랩 (`BeforeSceneLoad`)
+
+앱 시작 시점에:
+
+1. 씬에 `MasterInstaller`가 있으면 그것을 `_instance`로 잡습니다.
+
+2. 없으면 **`Resources.Load<MasterInstaller>("MasterInstaller")`** 로 프리팹을 찾아 인스턴스화하고 이름을 `[MasterInstaller]`로 둡니다.
+
+3. 인스턴스가 있으면 **`DontDestroyOnLoad`** 후 **`RebuildRuntimeRegistry()`** 를 호출해 런타임 딕셔너리를 채웁니다.
+
+즉 **씬에 없어도** `Resources` 프리팹만 맞춰 두면 전역 스코프가 생깁니다.
+
+---
+
+## 레지스트리 구성
+
+- 직렬화 **`_globalReferrals`** 리스트를 순회하며 각 항목에 대해 `[Referral]`의 **`BindType`·`Id`** 를 읽고,  
+ `RegisterTypeMappings`로 **`_runtimeRegistry`** 에 반영합니다.
+
+- **`RebuildRuntimeRegistry()`** 호출 시 **`_safetyNetArmed = true`** — 다음  
+`Resolve` 미스에서 **1회** 런타임 재구성을 시도할 수 있습니다 (이미 시도했다면 재구성 없이 `null`).
+
+명시적 재구성이나 **`Register()`** 가 호출되면 Safety Net이 **재정비**됩니다.
+
+---
+
+## `Resolve`
+
+- 내부적으로 **`RegistryKey(type)` 또는 `RegistryKey(type, id)`** 로 `_runtimeRegistry`를 조회합니다.
+
+- 미스이고 Safety Net이 켜져 있으면 한 번 **`RebuildRuntimeRegistryCore()`** 를 돌린 뒤 다시 조회합니다.
+
+---
+
+## `Create<T>()`
+
+순수 C# 등 **`class`** 인스턴스를 만들 때, 생성자·필드에 필요한 `Component`는 다음 순서로 해석합니다.
+
+1. **전역** — `MasterInstaller`의 `Resolve(type, id)`
+
+2. 없으면 **씬** — `SceneInstaller.Instance`가 있을 때만 `Resolve(type, id)`
+
+:::danger
+`Create<T>` 는 `MonoBehaviour`에서 사용하지 않는 것이 계약입니다.
+:::
+---
+
+## 틱(`ITickable` 등)
+
+`Create<T>()` 직후 생성물이 `ITickable` / `IFixedTickable` / `ILateTickable`이면  
+**이 `MasterInstaller`의 `Update`/`FixedUpdate`/`LateUpdate`** 에서 위임됩니다. 
+
+전역 수명 동안 틱이 필요한 서비스에 맞습니다. 
+
+:::note
+기존 D.I 솔루션들의 특징은 이 `Tickable` 을 `PlayerLoop` 라는 **별도 생명 주기를 통해 구축**하였다는 점입니다.  
+이는 **생명 주기를 가진 객체가 늘어날 수록 관리가 매우 난해해집니다.**  
+따라서 **UNInject**는 **MonoBehaviour** 를 가진 **Provider**가 이 **Tick** 을 발급해주는 구조로 제작되었습니다.   
+:::
+---
+
+## 에디터 전용 `RefreshRegistry`
+
+로드된 씬·유효한 씬·`HideFlags.None`인 컴포넌트만 대상으로 `[Referral]`을 스캔해 `_globalReferrals`를 갱신합니다.  
+중복 `RegistryKey`는 첫 항목만 유지하고 경고합니다.
+
+```csharp
+// 전역에서 조회 (무키)
+var svc = MasterInstaller.Instance.ResolveAs<IMyService>();
+
+// Named
+var a = MasterInstaller.Instance.ResolveAs<IMyService>("primary");
+```

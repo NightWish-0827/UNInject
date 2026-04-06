@@ -1,0 +1,90 @@
+﻿---
+title: IScopeDestroyable
+sidebar_label: IScopeDestroyable
+description: Create<T> 순수 C# 서비스의 스코프 OnDestroy 직전 정리 콜백
+---
+
+# `IScopeDestroyable`
+
+`IScope.Create<T>()`로 만든 인스턴스는 **`MonoBehaviour`가 아니므로** Unity의 `OnDestroy`를 직접 받지 못합니다.  
+**`IScopeDestroyable`** 은 **그 인스턴스가 “붙어 있는” 스코프**(해당 `MasterInstaller` / `SceneInstaller` / `ObjectInstaller`)가  
+파괴될 때 정리 코드를 실행하기 위한 계약입니다.
+
+```csharp
+public interface IScopeDestroyable
+{
+    void OnScopeDestroy();
+}
+```
+
+---
+
+## 호출 시점
+
+세 Installer의 **`OnDestroy`** 에서 **`TickableRegistry.ClearWithDestroy()`** 가 호출되면,  
+
+내부적으로 :
+
+1. 등록된 **`IScopeDestroyable`** 들에 대해 **`OnScopeDestroy()`** 를 **순서대로** 호출합니다.
+
+2. 개별 구현에서 예외가 나도 **`Debug.LogException` 후 다음 대상은 계속** 호출됩니다.
+
+3. 그 다음 **틱 리스트·destroyable 목록이 비워집니다.**
+
+문서화된 의도는 **`ITickable` / `IFixedTickable` / `ILateTickable` 해제(더 이상 틱을 안 탐)보다 앞선 단계**에서,  
+“비즈니스 정리”를 하게 하는 것입니다.
+
+---
+
+## 어떤 스코프가 소유자인가
+
+`Create<T>()`를 **어느 Installer에서 호출했는지**가 소유 스코프입니다.
+
+- **`MasterInstaller.Create<T>()`** → 매니저 `GameObject`가 파괴될 때(또는 도메인 종료 등) **`OnScopeDestroy`**.
+
+- **`SceneInstaller.Create<T>()`** → 해당 씬 Installer가 파괴될 때.  
+  씬 언로드 시 **`SceneExitPolicy`** 와 관계없이 **씬 Installer의 `OnDestroy`에서 틱 레지스트리는 항상  
+  `ClearWithDestroy`** 가 돌아갑니다(씬 파괴 후 틱 잔존 방지).
+
+- **`ObjectInstaller.Create<T>()`** → 그 오브젝트의 **`ObjectInstaller`** 가 파괴될 때.
+
+
+:::info
+**부모 스코프로 전파되지 않습니다.**  
+자식 `ObjectInstaller`에서 만든 서비스는 부모의 파괴만으로는 정리 콜백이 오지 않습니다.  
+(자식 Installer가 먼저 파괴되면 그때 호출됨).
+:::
+
+---
+
+## 예시
+
+```csharp
+public partial class AnalyticsFlushService : IScopeDestroyable
+{
+    [InjectConstructor]
+    public AnalyticsFlushService([GlobalInject] IFileSink sink) { }
+
+    private readonly List<byte> _buffer = new List<byte>();
+
+    public void OnScopeDestroy()
+    {
+        // 틱 루프는 이미 의미 없음 — 파일 플러시·구독 해제만
+        Flush();
+    }
+
+    private void Flush() { /* ... */ }
+}
+```
+
+같은 타입이 **`ITickable`** 과 **`IScopeDestroyable`** 을 함께 구현하면,  
+생성 시 둘 다 등록되고 파괴 시 **`OnScopeDestroy` 먼저**, 이어서 틱 목록이 비워집니다.
+
+---
+
+## `MonoBehaviour`에는 적용되지 않음
+
+:::info
+일반 컴포넌트는 Unity **`OnDestroy`** 를 쓰면 됩니다. 이 인터페이스는 **`Create<T>` 서비스 객체**를 염두에 둡니다.  
+일반 컴포넌트는 Unity 생명주기를 따르십시오. 
+:::

@@ -1,0 +1,68 @@
+﻿---
+title: 문제 해결 노트
+sidebar_label: 문제 해결
+description: 콘솔 메시지·빈 레지스트리·Resolve 실패·플랜·디파인 심볼
+---
+
+# 문제 해결 노트
+
+아래는 SDK에 실제로 있는 진단·동작을 바탕으로 한 **체크리스트**입니다.
+
+---
+
+## 플레이 직전 경고
+
+| 메시지 성격 | 확인할 것 |
+|-------------|-----------|
+| **Global registry is empty** (`MasterInstallerPlayModeGuard`) | 씬에 `MasterInstaller`가 있는데 **`_globalReferrals`가 비었음** → **Refresh Global Registry**. |
+| **partial / Roslyn 플랜 / 생성자 팩토리** (`UNInjectFallbackGuard`) | 경고에 나온 타입을 **`public partial class`** 로 바꾸고 프로젝트가 제너레이터를 돌게 함. `[InjectConstructor]` 타입은 **`HasGeneratedFactory`** 경로. |
+| **Referral 타입인데 주입 필드 + 플랜 없음** | 동적 `Register`를 쓸 타입도 **생성 플랜**을 갖추는 편이 IL2CPP에 유리. |
+
+---
+
+## 빌드 또는 “Validate Bake” 에러
+
+| 증상 | 원인에 가깝게 |
+|------|----------------|
+| **Missing [Referral] for type ‘X’** | 필수 **`[GlobalInject]`** (무키)가 요구하는 **`X`에 대한 전역 매핑**이 **`MasterInstaller` 베이크 목록에 없음**. Id 있는 Named면 별도 메시지로 Id가 찍힘. |
+| **Missing [SceneReferral] …** | 동일 류가 **씬 레지스트리**. |
+| **빌드 씬에 인스톨러가 없거나**, **추가만 하고 안 켠 씬** | `EditorBuildSettings`에서 **활성화된 씬만** 검사하므로, 실제 플레이 플로우 씬이 빠져 있으면 오탐·미검 가능. |
+| **런타임에만 `Register`하는 매핑** | 베이크 목록에 안 보이면 **누락으로 잡힐 수 있음**. CI strict 사용 시 정책 조정. |
+
+**`UNINJECT_STRICT_BUILD`** 가 켜져 있으면 위 누락이 **빌드 실패**로 승격됩니다.
+
+---
+
+:::tip
+## 런타임에서 Resolve / 주입 실패 (Resolving 문서에서 내용을 찾으면 편합니다)
+
+- **`Resolve`가 null** : 등록 누락, 잘못된 타입·Id, 다른 씬의 `SceneInstaller`, **세이프티 넷 1회** 이후에도 없는 키 등.  
+
+- **`ObjectInstaller` 자식만 `[Inject]`** : **`HasAnyInjectField`가 false** 이므로  
+**`InjectGlobalDependencies`가 `TryInjectTarget`을 스킵**할 수 있습니다.  
+씬·전역 주입이 필요하면 **`[GlobalInject]` / `[SceneInject]`** 를 쓰세요.
+
+- **첫 프레임 타이밍** : 세이프티 넷이 **한 번** 재빌드를 시도할 여지는 있으나,  
+근본적으로는 **등록 순서·베이크**를 맞추는 것이 안전합니다.
+:::
+---
+
+## 성능·프로파일링
+
+**`UNINJECT_PROFILING`** 스크립팅 심볼을 켜면 `UNInjectProfiler`와 `ObjectInstaller.TryInjectTarget` 측정 경로가 컴파일됩니다. 주입 병목을 숫자로 보고 싶을 때만 켜는 **개발 전용** 스위치입니다.
+
+---
+
+## 에디터 도구 빠른 참조
+
+| 목적 | 메뉴 / 동작 |
+|------|-------------|
+| 전역 베이크 비어 있나 | 플레이 → Master 가드 경고 |
+| 폴백·partial | 플레이 → Fallback 가드 |
+| 씬·빌드 씬 대비 등록 커버 | **`Window > UNInject > Validate Bake`** |
+| 관계 시각화 | **`Window > UNInject > Dependency Graph`** → **Refresh** |
+
+:::tip
+여전히 원인이 안 보이면,  
+**fallback 가드에 찍힌 타입**과 **베이크 검증 에러 한 줄**을 함께 보면 같은 결함을 빨리 찾는 경우가 많습니다.
+:::

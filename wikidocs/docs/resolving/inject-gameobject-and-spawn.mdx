@@ -1,0 +1,88 @@
+﻿---
+title: GameObject 주입·스폰
+sidebar_label: GameObject · 스폰
+description: "InjectGameObject, SpawnInjected, 풀 Release·InjectTargetFromPool"
+---
+
+# GameObject 주입·스폰
+
+`ObjectInstaller`는 **계층 전체**를 한 번에 주입하거나, **프리팹/컴포넌트 프리팹**을 인스턴스화한 뒤 주입하는 오버로드를 제공합니다.
+
+---
+
+## `InjectGameObject`
+
+```csharp
+public void InjectGameObject(GameObject root, bool includeInactive = true);
+```
+
+- `root`가 `null`이면 즉시 반환합니다.
+
+- `root`를 포함해 **`GetComponentsInChildren<MonoBehaviour>(includeInactive)`** 로 모든 대상을 얻고,  
+각각 **`InjectTarget(target)`** 을 호출합니다.
+
+:::info
+**의미 :** 각 `MonoBehaviour`에 대해 **`InjectTarget` → `TryInjectTarget`** 이 돌아갑니다.  
+**`[Inject]` 필드**는 Bake된 참조만 쓰고, **`[SceneInject]`/`[GlobalInject]`** 는 이때 Resolve됩니다.
+:::
+---
+
+## `SpawnInjected` (`GameObject` 프리팹)
+
+- **`SpawnInjected(prefab)`** — 위치 `(0,0,0)`, 회전 항등, 부모 `null`로 `Instantiate` 후 **`InjectGameObject(instance)`**.
+
+- **`SpawnInjected(prefab, parent)`** — 동일 위치·회전, 지정 부모 아래 생성.
+
+- **`SpawnInjected(prefab, position, rotation, parent)`** — 풀 시그니처.
+
+반환값은 생성된 **`GameObject`** 입니다. `prefab`이 `null`이면 `null`입니다.
+
+---
+
+## `SpawnInjected<T>` (`MonoBehaviour` 프리팹)
+
+`T : MonoBehaviour` 제약:
+
+- **`SpawnInjected(T prefab)`** — `Instantiate(prefab)` 후 **`InjectTarget(instance)`** 만 호출 (**자식 트리는 자동 순회하지 않음**).
+
+- 위치·회전·부모 오버로드도 동일하게 **`InjectTarget`** 만 합니다.
+
+:::info
+**차이 :** `GameObject` 버전은 **서브트리 전체**에 `InjectGameObject`를 돌리고,  
+`T` 버튼은 **루트 컴포넌트 한 개**만 `InjectTarget`합니다.  
+자식들도 주입하려면 **`InjectGameObject(instance.gameObject)`** 를 추가로 호출하거나 `GameObject` 프리팹 API를 쓰십시오.
+
+**풀 구조의 다형성을 보장하기 위해 위와 같이 디자인 되었습니다.**
+:::
+---
+
+## 풀 연동
+
+### `InjectTargetFromPool`
+
+```csharp
+public void InjectTargetFromPool(MonoBehaviour target);
+```
+
+내부적으로 **`TryInjectTarget(target, logWarnings: true, isReinjection: true)`** 입니다.  
+성공 시 **`IPoolInjectionTarget.OnPoolGet()`** 경로를 타고, **`IInjected.OnInjected()`** 는 재주입 모드에서는 호출되지 않습니다.
+
+### `ReleaseTargetToPool`
+
+```csharp
+public void ReleaseTargetToPool(MonoBehaviour target);
+```
+
+1. 대상이 **`IPoolInjectionTarget`** 이면 **`OnPoolRelease()`** 호출.
+
+2. 타입의 **`GetGlobalInjectFields` / `GetSceneInjectFields`** 에 대해 각 **`Setter(target, null)`** 로 참조를 비웁니다.
+
+로컬 **`[Inject]`** 직렬화 필드는 이 API로 지우지 않습니다. 풀에 넣기 전 로컬 참조 정리가 필요하면 별도 처리합니다.
+
+```csharp
+// 풀에서 꺼냄 → 재주입
+installer.InjectTargetFromPool(pooled);
+
+// 풀에 넣음 → 콜백 + 글로벌/씬 필드 null
+installer.ReleaseTargetToPool(pooled);
+```

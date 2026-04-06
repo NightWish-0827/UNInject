@@ -1,0 +1,33 @@
+name: Deploy Wiki
+
+on:
+  push:
+    branches: [main] # 혹은 master
+    paths:
+      - 'wikidocs/**' # wikidocs 폴더 변경 시에만 실행
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: 'wikidocs/package-lock.json'
+
+      - name: Install & Build
+        run: |
+          cd wikidocs
+          npm install
+          npm run build
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./wikidocs/build
+          # 중요: 이미 github.io가 있으므로 해당 레포의 서브 경로로 배포됨

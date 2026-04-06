@@ -1,0 +1,73 @@
+﻿---
+title: Resolve 체인
+sidebar_label: Resolve 체인
+description: "ObjectInstaller 상위, Create별 resolver, 필드 주입 순서"
+---
+
+# Resolve 체인
+
+'`Resolve(IFoo)`를 호출했을 때 **어느 맵을 어떤 순서로** 보는가' 는 **호출 주체**에 따라 다릅니다.
+
+---
+
+## `ObjectInstaller.Resolve(type, id)` (`ResolveInternal`)
+
+1. **로컬** `_localRegistry` — `RegistryKey(type, id)`
+
+2. **`_parentScope`가 있으면** — `_parentScope.Resolve(type, id)` (그 안에서 다시 로컬→… 재귀)
+
+3. **`_parentScope`가 없으면** — `SceneInstaller.Instance`가 있으면 `Resolve(type, id)`,  
+그다음 `MasterInstaller.Instance`가 있으면 `Resolve(type, id)`
+
+즉 기본 체인은 **로컬 → 씬 → 전역**입니다. 부모 로컬을 끼우면 **로컬 → 부모 체인 → … → 씬 → 전역**이 됩니다.
+
+`TryResolve` 계열은 위와 같은 경로로 찾은 뒤 null 여부만 반환합니다.
+
+---
+
+## `SceneInstaller.Resolve` / `MasterInstaller.Resolve`
+
+각자 **`_sceneRegistry` 또는 `_runtimeRegistry`** 안에서만 `ResolveByKey`를 돌립니다.  
+**서로의 맵을 자동으로 넘나들지 않습니다.** (다만 **`Create<T>`의 resolver 람다식**에서는 넘나듭니다 — 아래 참고.)
+
+Safety Net : 해당 맵에서 미스가 발생하면 **1회** 베이크 리스트 기반 재구성을 시도합니다.
+ 
+---
+
+## `Create<T>()` 안에서의 Component 해석
+
+| 호출 주체 | resolver가 하는 일 |
+|-----------|-------------------|
+| **`MasterInstaller.Create<T>`** | 전역 `Resolve(type, id)` → 없으면 `SceneInstaller.Instance.Resolve(type, id)` |
+| **`SceneInstaller.Create<T>`** | 씬 `Resolve(type, id)` → 없으면 `MasterInstaller.Instance.Resolve(type, id)` |
+| **`ObjectInstaller.Create<T>`** | **`ResolveInternal(type, id)`** 전체 (로컬→부모→씬→전역) |
+
+순수 C# 서비스를 **어느 스코프에서 만들지**에 따라 “전역이 우선인지 씬이 우선인지”가 갈립니다.
+
+:::note
+가장 **Unity에 최적화된 Scope를 강제**하여, **서비스 레이어의 안티 패턴을 방지**합니다.
+:::
+
+---
+
+## 필드 주입과 체인
+
+- **`ObjectInstaller.TryInjectTarget`** 은 각 필드마다 **`this.Resolve(fieldType, field.Id)`** 를 호출하므로,  
+위 **로컬→…→전역** 체인을 그대로 순회합니다.
+
+- **`InstallerRegistryHelper.CreateAndInject`** 의 필드 단계는 **`[SceneInject]` 먼저,  
+`[GlobalInject]` 나중** 순서로 채웁니다 — 스코프와 무관하게 **씬 필드가 전역 필드보다 앞서** 채워집니다.
+
+---
+
+## `Register` 위치와 체인
+
+- 전역에만 있는 매니저는 **로컬·씬 `Resolve`로는 안 보입니다** (체인이 거기까지 안 가거나 비어있는 맵).
+
+- 로컬에만 `Register<IMyApi>(impl)` 한 경우 **그 `ObjectInstaller` 아래 `Resolve`로만** 잡히는 것이 정상입니다.
+
+```csharp
+// 동일 인터페이스를 씬·전역에 나눠 올렸다면:
+// — ObjectInstaller.Resolve는 씬을 먼저 보고(null 아니면) 전역을 보지 않을 수 있음
+// — MasterInstaller.Create는 전역 먼저, SceneInstaller.Create는 씬 먼저
+```

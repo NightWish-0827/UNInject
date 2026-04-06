@@ -1,0 +1,95 @@
+﻿---
+title: 레지스트리 새로고침
+sidebar_label: 레지스트리 새로고침
+description: "Refresh Global Registry, Refresh Scene Registry, 스캔 규칙·중복 키"
+---
+
+# 레지스트리 새로고침
+
+전역·씬 **Manager 레이어**는 런타임에 `MonoBehaviour` 전체를 뒤지지 않고,  
+에디터에서 채운 **`_globalReferrals` / `_sceneReferrals`** 직렬화 리스트를 베이스로 딕셔너리를 구성합니다.  
+그 리스트를 씬 상태에 맞게 다시 채우는 작업이 **Refresh** 입니다.
+
+---
+
+
+## `MasterInstaller.RefreshRegistry`
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/getting-started/masterrefresh.png" width="400" />
+</div>
+
+**경로:** `Runtime/MasterInstaller.cs` (`#if UNITY_EDITOR`).
+
+**진입점:**
+
+- 인스펙터의 **`Refresh Global Registry`** 버튼 (`MasterInstallerEditor`).
+- 컴포넌트 컨텍스트 메뉴 **Refresh Global Registry**.
+
+**알고리즘 요약:**
+
+1. `_globalReferrals.Clear()`.
+
+2. `Resources.FindObjectsOfTypeAll<Component>()` 후 필터:
+   - `c.gameObject.scene.IsValid() && c.gameObject.scene.isLoaded`
+   - `c.gameObject.hideFlags == HideFlags.None`
+
+3. 각 컴포넌트 타입에 **`[Referral]`** 속성이 없으면 스킵.
+
+4. `ReferralAttribute`에서 `BindType`이 있으면 그 타입,  
+없으면 **구체 컴포넌트 타입**으로 `RegistryKey(bindType, referral.Id)` 계산. `Id`가 비면 `RegistryKey.DefaultId`(무키).
+
+5. **`HashSet<RegistryKey> seenKeys`** — 동일 키가 이미 있으면 경고만 남기고 **첫 번째만** 리스트에 유지.
+
+6. `RebuildRuntimeRegistry()` 호출 후 `EditorUtility.SetDirty`, 로그 출력.
+
+```csharp
+// RegistryKey 중복 시 (소스 메시지 요약)
+// [MasterInstaller] Multiple [Referral] components mapped to '...' found in scene.
+// Only the first one will be used in global registry.
+```
+
+**의미:** 같은 바인딩 키로 두 개의 전역 매니저가 잡히면 **비결정적**이 되므로, 명시적으로 첫 항목만 채택합니다.
+
+---
+
+## `SceneInstaller.RefreshSceneRegistry`
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/getting-started/scenerefresh.png" width="400" />
+</div>
+
+**경로:** `Runtime/SceneInstaller.cs` (`#if UNITY_EDITOR`).
+
+**진입점:**
+
+- 인스펙터 **`Refresh Scene Registry`** (`SceneInstallerEditor`).
+
+- 컨텍스트 메뉴 **Refresh Scene Registry**.
+
+**`MasterInstaller`와 다른 점:**
+
+- 스캔 대상 씬이 **`gameObject.scene` 한정** — `FindObjectsOfTypeAll` 후 `c.gameObject.scene == currentScene`.
+
+- 인식 속성은 **`[SceneReferral]`**.
+
+- 끝에서 `RebuildSceneRegistry()` 호출 — 내부적으로 Safety Net 재정비 등 씬 전용 초기화.
+
+```csharp
+// 씬 키 중복 시
+// [SceneInstaller] Multiple [SceneReferral] components mapped to '...' ...
+```
+
+---
+
+## 언제 눌러야 하나
+
+- `[Referral]` / `[SceneReferral]` 매니저를 **추가·이동·삭제**한 직후.
+
+- 프리팹 적용 후 씬 인스턴스가 바뀐 직후.
+
+- 플레이 전 **`MasterInstallerPlayModeGuard`** 가 `_globalReferrals` 비어 있음을 경고할 때.
+
+`ObjectInstaller.BakeDependencies()`는 시작 시 **`MasterInstaller.Instance?.RefreshRegistry()`** 를 호출하므로,  
+로컬 Bake만으로도 전역 리스트가 한 번 갱신됩니다(씬에 `MasterInstaller`가 있을 때).
+

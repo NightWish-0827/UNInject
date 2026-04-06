@@ -1,0 +1,76 @@
+﻿---
+title: 핫 패스
+sidebar_label: 핫 패스
+description: 딕셔너리 Resolve, HasAnyInjectField 음성 캐시, Roslyn 플랜 우선 조회
+---
+
+# 핫 패스
+
+`핫 패스`는 **플레이 중 반복**되는 경로—특히 **`Resolve`** 와 **`ObjectInstaller.InjectGlobalDependencies`가 스캔하는  
+MonoBehaviour 루프**—에서 SDK가 의도적으로 **O(1)에 가깝게** 유지하는 부분을 말합니다.
+
+---
+
+## `Resolve` → 레지스트리 직접 조회
+
+`MasterInstaller` / `SceneInstaller` / `ObjectInstaller`는 내부적으로,  
+**`Dictionary<RegistryKey, Component>`** (또는 동일 패턴)에 **`TryGetValue`** 합니다.  
+
+이름·문자열 리플렉션이 아니라 **해시된 키 조회**가 기본 비용입니다.
+
+- `ObjectInstaller`는 그 앞에 **`_localRegistry`** 를 같은 방식으로 봅니다.
+
+- **세이프티 넷**이 발동하지 않는 일반 경로에서는 **추가 할당 없이** 히트/미스만 결정됩니다.
+
+---
+
+## `InjectGlobalDependencies` + `HasAnyInjectField`
+
+`ObjectInstaller.Awake`는 자식 `MonoBehaviour`를 순회할 때,  
+매 타입마다 **`TypeDataCache.HasAnyInjectField(type)`** 를 먼저 호출합니다.
+
+- **`[GlobalInject]` / `[SceneInject]`가 하나도 없으면** 타입은 **`_noInjectTypes`** 에 들어가고,  
+이후 **`TryInjectTarget` 자체를 호출하지 않습니다**.
+
+- 이미 판별된 타입은 **해시 셋 조회 O(1)** 로 끝납니다.
+
+즉 **로컬 `[Inject]`만 있는 컴포넌트**는 이 루프에서 **전역·씬 주입 후보에서 제외**되어 비용이 들지 않습니다.
+
+---
+
+## `TypeDataCache` — 생성 플랜 1순위
+
+`GetGlobalInjectFields` / `GetSceneInjectFields`는 **해당 타입에 Roslyn이 등록해 둔 리스트**가 있으면  
+**즉시 그 리스트를 반환**합니다.
+
+- 필드 목록 구축·리플렉션 **`GetFields`** ·**`CreateSetter`** 가 **핫 패스에서 실행되지 않습니다**.
+
+- 각 `CachedInjectField`의 **`Setter`** 는 생성 시점에 고정된 대리(delegate)이므로,  
+주입 루프는 **리스트 순회 + `Setter(instance, value)`** 수준입니다.
+
+---
+
+## `Create<T>()` 팩토리 우선
+
+`InstallerRegistryHelper.CreateAndInject`는 **`TypeDataCache.TryGetGeneratedFactory`** 에 성공하면 **리플렉션 생성자 없이**  
+팩토리만 호출합니다.  
+
+인스턴스가 생긴 뒤 필드 단계도 위와 같이 **플랜 리스트**가 있으면 동일한 이점이 이어집니다.
+
+---
+:::tip
+## 요약
+
+| 지점 | 핫 패스에서의 이득 |
+|------|---------------------|
+| Resolve | 키 기반 딕셔너리 조회 |
+| 스캔 루프 | `HasAnyInjectField` + `_noInjectTypes` |
+| 필드 주입 | 생성 플랜 캐시 히트 시 리플렉션·Expression 최초 비용 없음 |
+| `Create<T>` | 생성 팩토리 히트 시 `ConstructorInfo.Invoke` 회피 |
+
+성능을 최대한 활용하기 위해서는 **partial + 제너레이터**로 위 캐시·플랜 경로에 타입을 올리는 것이 핵심입니다.
+:::
+
+:::note
+**'당신의 구조가.. 코드가.. 뭐가 어찌 되었던, 우린 이 환경에선 가장 빠르다'**
+:::

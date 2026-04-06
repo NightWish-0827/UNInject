@@ -1,0 +1,27 @@
+﻿---
+title: IUnregistered (현재 미지원)
+sidebar_label: IUnregistered / 미지원
+description: 인터페이스만 정의됨 — 런타임에서 호출되지 않음
+---
+
+# `IUnregistered` (현재 미지원)
+
+```csharp
+public interface IUnregistered
+{
+    void OnUnregistered();
+}
+```
+
+---
+
+## 개발 방향성 
+
+- **컴포넌트·레지스트리 항목이 제거되는 시점**에 맞추려면  
+**`ScopeOwnerTracker`와 `Register(comp, owner)`** 로 소유자 파괴 시 언레지스터를 맞추고, **직접 정리 메서드를 호출**합니다.
+
+- **`Create<T>()` 서비스**는 스코프 파괴 시 **`IScopeDestroyable.OnScopeDestroy`** 를 사용합니다.
+
+- 일반 **`MonoBehaviour`** 는 **`OnDestroy`** 를 사용합니다.
+
+향후 **UNInject** 에서 레지스트리 제거 경로에 훅이 붙으면 이 계약이 살아날 수 있으나, **지금 버전은 “미지원”** 입니다.

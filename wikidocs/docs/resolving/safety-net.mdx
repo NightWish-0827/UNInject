@@ -1,0 +1,67 @@
+﻿---
+title: 세이프티 넷
+sidebar_label: 세이프티 넷
+description: "Resolve 미스 1회 재구성, 재무장 조건, Master·Scene 공통"
+---
+
+# 세이프티 넷 (Resolve 1회 복구)
+
+`MasterInstaller`와 `SceneInstaller`의 **`Resolve`** 는 내부적으로 같은 패턴을 씁니다.  
+딕셔너리에 키가 없을 때 **조건부로 한 번** 베이크 리스트에서 런타임 맵을 다시 만들고, 같은 키로 **재조회**합니다.
+
+---
+
+## 플래그 의미
+
+- **`_safetyNetArmed == true`** — 다음 조회에서 미스가 나면 **재구성을 1회 시도**할 수 있습니다.
+
+- 재구성을 한 번 시도한 직후 **`false`** 로 바뀝니다.
+
+- 그 상태에서 같은 키가 또 없으면 **추가 재구성 없이** `null`을 반환합니다.
+
+즉 **연속 미스마다 재구성 루프에 빠지지 않도록** 제한합니다.
+
+---
+
+## 재정비 (`true` Again)
+
+다음 케이스 중 하나가 발생하면 다시 **`true`** 가 됩니다.
+
+- **`RebuildRuntimeRegistry` / `RebuildSceneRegistry`** 가 호출될 때 (직렬화 리스트 기반 전체 재구성 진입점).
+
+- **`Register(Component)`** 가 호출될 때 — 런타임에 맵이 바뀌었으므로 다음 미스에서 다시 한 번 복구 기회를 줍니다.
+
+`ObjectInstaller`의 **`ResolveInternal`** 은 이 플래그를 쓰지 않고,  
+씬·전역 싱글톤의 `Resolve`에 위임할 때 **상대 스코프의 세이프티 넷**이 적용됩니다.
+
+---
+
+## 어디에 적용되나
+
+- **`MasterInstaller`** — `_runtimeRegistry` 조회 경로 (`ResolveByKey`).
+
+- **`SceneInstaller`** — `_sceneRegistry` 조회 경로.
+
+:::info
+[Object Installer에 안전망이 없는 이유](/registering/runtime-register#objectinstaller)
+**`ObjectInstaller._localRegistry`** 에는 세이프티 넷이 없습니다.  
+로컬에 없으면 곧바로 상위 `Resolve`로 넘어갑니다.
+:::
+---
+
+## 기대 효과·한계
+
+- 부트 순서나 첫 프레임에서 **맵이 아직 비어 있는 타이밍**에 첫 `Resolve`가 실패하는 엣지 케이스를 완화합니다.
+
+- **애초에 등록되지 않은 타입**에 대해서는 재구성해도 없으면 두 번째도 `null`입니다. 근본 원인은 등록·베이크·스코프 선택입니다.
+
+:::info
+
+당연하게도, 등록되지 않은 타입에 대해서는 재구성을 시도해도 계속해서 `null` 입니다.  
+
+:::
+
+```csharp
+// 첫 Resolve가 빈 맵 타이밍을 만나면 1회 재빌드 후 재시도될 수 있음
+// 두 번째도 없으면 null — 매니저 배치·Refresh·Register를 점검
+```

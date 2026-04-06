@@ -1,0 +1,38 @@
+﻿---
+title: Master 플레이 모드 가드
+sidebar_label: Master 플레이 가드
+description: 플레이 진입 직전 빈 전역 레지스트리 경고 — MasterInstaller._globalReferrals
+---
+
+# Master 플레이 모드 가드
+
+`MasterInstallerPlayModeGuard`는 에디터에서 **`InitializeOnLoad`** 로 등록되며,  
+**`EditorApplication.playModeStateChanged`** 를 구독합니다.
+
+---
+
+## 언제 동작하나
+
+- 시점: **`PlayModeStateChange.ExitingEditMode`** (플레이로 넘어가기 직전).
+
+- **현재 열린 씬에 `MasterInstaller`가 하나라도 있을 때만** 검사합니다. 마스터가 없으면 아무 것도 하지 않습니다.
+
+## 무엇을 보나
+
+대상 `MasterInstaller`에 대해 **`SerializedObject`** 로 **`_globalReferrals`** 배열 길이를 읽습니다.
+
+- **`arraySize == 0`** 이면 **`Debug.LogWarning`** 한 줄을 냅니다.  
+
+:::info
+  로그 요지 : 전역 레지스트리가 비어 있으니 **`Refresh Global Registry`** 를 잊지 않았는지 확인하라는 안내입니다.
+:::
+
+**베이크된 전역 추천 목록이 비어 있는 상태로 플레이**하면 경고가 뜨도록 해 두었습니다. **경고만**이며 플레이 진입을 막지는 않습니다.
+
+---
+
+## 수동 대응
+
+인스펙터에서 **`MasterInstaller` → Context Menu의  
+`Refresh Global Registry`** (또는 프로젝트에서 쓰는 동일 동작)로 **`_globalReferrals`를 채운 뒤** 플레이하면 경고가 사라집니다.
+

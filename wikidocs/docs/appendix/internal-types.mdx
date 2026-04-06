@@ -1,0 +1,77 @@
+﻿---
+title: 내부 타입
+sidebar_label: 내부 타입
+description: internal API — RegistryKey, 헬퍼, InternalsVisibleTo
+---
+
+# 내부 타입 (Appendix)
+
+게임 어셈블리에서는 **`MasterInstaller`**, **`IScope`**, **`TypeDataCache`** 같은 **공개 API**만 쓰는 설계를 전제로 합니다.  
+아래는 **같은 패키지 안에서만**, 또는 **`InternalsVisibleTo`로 허용된 어셈블리에서만** 보이는 요소입니다.
+
+---
+
+## `RegistryKey` (`internal readonly struct`)
+
+레지스트리 **`Dictionary<RegistryKey, Component>`** 의 키입니다.
+
+- **`Type`** + **`Id`** (`string.Empty` = v1.x와 같은 무키)  
+
+- **`DefaultId`**, 생성자, `Equals` / `GetHashCode` / `ToString()` 은 **`internal`**
+
+사용자 코드는 보통 **`Resolve(typeof(IFoo))`**, **`Resolve(typeof(IFoo), "id")`** 처럼 공개 API로만 접근합니다.
+
+---
+
+## `InstallerRegistryHelper` (`internal static class`)
+
+`RegisterTypeMappings`, `Unregister`, **`CreateAndInject<T>`**, **`IsMappableAbstraction`** 등  
+**Installer들이 공유하는 정적 로직**입니다. 
+
+:::danger
+외부에서 호출할 **공식 진입점이 아닙니다.**
+:::
+
+---
+
+## `TickableRegistry` (`internal sealed class`)
+
+`ITickable` / `IFixedTickable` / `ILateTickable` / **`IScopeDestroyable`** 목록과 **스냅샷 틱**,  
+**`ClearWithDestroy`** 를 캡슐화합니다. **각 Installer 인스턴스가 하나씩 소유**합니다.
+
+---
+
+## `ScopeOwnerTracker` (`internal sealed class`)
+
+**`Register(component, owner)`** 시 **owner의 GameObject**에 붙는 헬퍼입니다.  
+**메뉴에 노출되지 않으며** `OnDestroy`에서 등록된 콜백을 실행합니다.
+
+---
+
+## 에디터 전용
+
+| 타입 | 역할 |
+|------|------|
+| **`UNInjectEditorUtility`** | `ShouldSkipAssembly` — 진단 스캔에서 어셈블리 필터링 단일화 |
+| **`UNInjectGraphView`**, **`UNGraphNode`** | 의존성 그래프 창 내부 |
+
+---
+
+## `InternalsVisibleTo`
+
+`Assemblyinfo.cs`에 다음이 선언되어 있습니다.
+
+- **`UNInject.Tests.EditMode`**
+
+- **`UNInject.Editor`**
+
+테스트·에디터 확장 어셈블리가 **`InstallerRegistryHelper`** 등에 접근할 수 있게 하는 설정입니다.  
+**일반 게임 코드 ASMDef**에는 보이지 않습니다.
+
+---
+
+## 정리
+
+:::danger
+내부 타입 이름을 아는 것은 **로그 스택·디버깅·RND**에 도움이 될 뿐, **새 코드에서 직접 참조할 대상은 아닙니다.** 
+:::

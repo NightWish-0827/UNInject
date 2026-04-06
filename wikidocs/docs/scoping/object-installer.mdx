@@ -1,0 +1,102 @@
+﻿---
+title: ObjectInstaller
+sidebar_label: ObjectInstaller
+description: "로컬 스코프, _parentScope, Resolve 체인, 주입 순서, 틱 비전파"
+---
+
+# ObjectInstaller (로컬 스코프)
+
+특정 **루트 `GameObject`** 에 붙어, 그 **자식 계층**의 의존성을 묶어 처리합니다.
+
+:::info
+유니티의 **[SerializeField]** 를 활용했지만, 이는 Bake 최적화를 위해서 사용되었으며  
+내부적으로 자체 `Resolve<T>` 을 거친 후 주입됩니다.
+
+특징으로는, **[SerializeField, Inject]** 로 주입된 의존성은 필드를 'Read Only' 로 노출합니다.  
+동일 루트를 공유하는 컴포넌트들에게 **참조 배분. Service Locate**의 패턴을 강제합니다. 
+:::
+
+- **`[Inject]`** — 에디터에서 Bake한 **같은 트리 안** `Component` 참조.
+
+- **`[SceneInject]`** / **`[GlobalInject]`** — `Awake`의 `InjectGlobalDependencies`에서 **`Resolve(type, id)` 체인**으로 채웁니다.
+
+---
+
+## 로컬 레지스트리
+
+`_localRegistry`는 **`Register` / `Register<TBind>`** 로만 채워지는 **이 서브트리 전용** 맵입니다. 전역·씬 베이크 목록과는 별개입니다.
+
+---
+
+## `_parentScope`
+
+- **`null`** — 상위는 **`SceneInstaller.Instance` → `MasterInstaller.Instance`** 순으로 위임합니다.
+
+- **다른 `ObjectInstaller` 지정** — `Resolve(type, id)`가 로컬에 없으면 **`_parentScope.Resolve(type, id)`** 로 재귀합니다.  
+그 체인 끝에서야 기본적으로 씬·전역 싱글톤으로 이어집니다.
+
+:::note
+용도 : 풀 루트, 서브시스템 격리,  
+**중첩 ObjectInstaller**에서 “이 로컬 스코프의 상위는 싱글톤이 아니라 부모 로컬” 로 두고 싶을 때.
+:::
+
+---
+
+## `Awake`: 자동 주입
+
+`GetComponentsInChildren<MonoBehaviour>(true)`로 대상을 돌면서,  
+`TypeDataCache.HasAnyInjectField`가 참인 타입만 **`TryInjectTarget`** 합니다.  
+비용 최적화를 위해 주입 필드가 없다고 캐시된 타입은 건너뜁니다.
+
+---
+
+## 필드 주입 순서 (`TryInjectTarget`)
+
+1. **`[SceneInject]`** 필드 전부 — 각각 `Resolve(fieldType, field.Id)`
+
+2. **`[GlobalInject]`** 필드 전부 — 동일
+
+즉 **씬 매니저가 전역 매니저보다 먼저** 채워집니다. 동일 추상 타입을 양쪽에 두지 않도록 모델링하는 것이 안전합니다.
+
+필수 필드가 하나라도 실패하면 `success == false`이고, `Optional`이 아니면 경고 로그가 발생합니다.  
+성공 시 **`IInjected.OnInjected`** (재주입이 아닐 때) 또는 풀 경로의 **`IPoolInjectionTarget.OnPoolGet`** 이 호출됩니다.
+
+---
+
+## `Resolve` 체인 (요약)
+
+`ResolveInternal(type, id)` :
+
+1. `_localRegistry`에서 `RegistryKey(type, id)` 조회
+
+2. 없고 `_parentScope != null` → `_parentScope.Resolve(type, id)`
+
+3. 없고 `_parentScope == null` → `SceneInstaller.Instance?.Resolve(type, id)` 후 **`MasterInstaller.Instance?.Resolve(type, id)`**
+
+Named 바인딩은 **체인 전 구간**에서 동일 `id`로 전달됩니다.
+
+---
+
+## `Create<T>()`
+
+이 스코프의 `Create<T>`는 내부 resolver로 **`ResolveInternal` 전체**를 씁니다.  
+즉 **로컬 → (부모 로컬…) → 씬 → 전역** 순으로 Component 의존성을 모읍니다.
+
+---
+
+## 틱
+
+`ITickable` 등은 **`이 ObjectInstaller`의 `Update`/`FixedUpdate`/`LateUpdate`** 에서만 돌아갑니다.  
+**부모 스코프나 `MasterInstaller`로 틱이 전파되지 않습니다**. 예측 가능성을 위한 정책입니다.
+
+---
+
+## 파괴 시
+
+`OnDestroy`에서 **`_localRegistry`**, **`_ownershipMap`**, 틱 레지스트리를 비웁니다.  
+소유권 기반 등록은 [ScopeOwnerTracker](/registering/scope-owner-tracker)와 연동됩니다.
+
+```csharp
+// 부모 로컬을 상위로 두는 중첩 예 (인스펙터에서 _parentScope 할당)
+// ChildInstaller.Resolve → ParentInstaller.Resolve → … → Scene → Master
+```

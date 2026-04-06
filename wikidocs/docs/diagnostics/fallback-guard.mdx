@@ -1,0 +1,83 @@
+﻿---
+title: 폴백 가드
+sidebar_label: 폴백 가드
+description: 플레이 직전 partial·Roslyn 플랜·생성자 팩토리·런타임 Register 후보 경고
+---
+
+# UNInject 폴백 가드
+
+`UNInjectFallbackGuard`는 **`InitializeOnLoad`** 로 로드되며,  
+플레이로 넘어가기 직전(**`ExitingEditMode`**)에 **여러 종류의 “리플렉션·폴백 위험”을 스캔**해 `Debug.LogWarning` 으로 알립니다.
+
+스캔 대상 어셈블리는 **`UNInjectEditorUtility.ShouldSkipAssembly`** 와 같은 규칙으로 필터링됩니다.  
+(System.*, UnityEngine.*, UnityEditor.* 등 인프라 어셈블리 제외).
+
+---
+
+## 1) 주입 필드 — Roslyn 플랜 없음
+
+**`[GlobalInject]` 또는 `[SceneInject]` 필드**를 가진 타입을 모은 뒤,
+
+- **`TypeDataCache.HasGeneratedGlobalPlan` / `HasGeneratedScenePlan`** 이 모두 거짓이면 “폴백 타입”으로 간주합니다.
+
+경고 내용 요지 :
+
+- **Expression Tree / 이후 `FieldInfo.SetValue` 폴백**으로 돌아갈 수 있음.
+
+- IL2CPP에서는 특히 **`SetValue` 폴백**까지 갈 수 있어 배포 시 주의.
+
+- **`public partial class …`** 로 바꿔 제너레이터 플랜을 켜라는 안내.
+
+:::info
+언급되었듯, **UNInject** 는 총 3가지 폴백 시스템을 지원합니다.  
+위 내용은 WORST (Critical) 발생 시, 최종 가드 라인으로 `SetValue` 를 사용하게 된다는 언급입니다. 
+:::
+
+---
+
+## 2) 생성자 주입 — 팩토리 플랜 없음
+
+**`[InjectConstructor]`가 붙은 public 인스턴스 생성자**가 있는 타입 중,
+
+- **`TypeDataCache.HasGeneratedFactory(type)`** 가 거짓이면 목록에 넣습니다.
+
+경고 내용 요지:
+
+- **`Create<T>()`** 가 **`ConstructorInfo.Invoke`(리플렉션)** 으로 떨어짐.
+
+- IL2CPP에서 **생성자·파라미터 타입 스트리핑** 가능 → `link.xml` 등 보존 또는 **`partial`로 팩토리 생성** 권장.
+
+- 관련 진단 코드 언급: 컴파일 타임 **`UNI002`**(소스 제너레이터 쪽).
+
+목록에 **`ITickable` / `IFixedTickable` / `ILateTickable`** 구현이 있으면 접미사로 표시하고,  
+스트리핑 시 **`Create<T>` 자체가 작동 불가능하여, 틱 등록까지 못 갈 수 있다**는 추가 경고를 붙입니다.
+
+---
+
+## 3) 런타임 `Register` 후보
+
+**`[Referral]` 또는 `[SceneReferral]`** 이 붙은 타입이면서,
+
+- 인스턴스 필드에 **`[GlobalInject]` / `[SceneInject]`** 가 있고
+
+- **생성된 글로벌/씬 플랜이 아직 없으면**(`HasGeneratedGlobalPlan` / `HasGeneratedScenePlan` 모두 거짓)
+
+별도 목록으로 경고합니다.
+
+배경 : **`Register(comp)`** 로 동적 등록할 때 플랜이 없으면 주입 경로가 폴백을 타기 쉬워,  
+**에디터에서만 partial을 빼먹은 매니저**를 미리 짚어 주는 절차입니다.
+
+---
+
+## 정리
+
+| 검사 | 대략적인 의미 |
+|------|----------------|
+| 주입 필드 플랜 | partial + 제너레이터로 **필드 세터 플랜** 확보 |
+| 생성자 팩토리 | partial + 제너레이터로 **`Create<T>` 비리플렉션** 경로 |
+| Referral + 주입 필드 | 런타임 등록 대상이 **같은 규칙**으로 생성 코드를 갖추었는지 |
+
+:::info
+**플레이를 차단하지 않습니다.**  
+하지만. 그러하니 콘솔 경고를 보고 타입 목록을 따라가, 문제를 해소하시길 바랍니다.
+:::

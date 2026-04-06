@@ -1,0 +1,85 @@
+﻿---
+title: SceneInstaller
+sidebar_label: SceneInstaller
+description: "씬 스코프, 정적 Instance, 중복 경고, Create 해석 순서"
+---
+
+# SceneInstaller (씬 스코프)
+
+`[SceneReferral]` 매니저를 **현재 씬 범위**에서 `Resolve`하기 위한 Installer입니다.  
+**`DontDestroyOnLoad`를 쓰지 않으며**, 씬이 바뀌면 오브젝트 수명에 따라 함께 사라집니다.
+
+---
+
+## 정적 `Instance`
+
+- **`public static SceneInstaller Instance`** — 가장 최근에 `Awake`에서 `_instance = this`로 잡힌 인스턴스를 가리킵니다.
+
+- **둘 이상 존재할 때** — 나중에 깨어난 쪽이 승리하며, 경고 로그에 **이전·새 오브젝트 이름과 씬 이름**이 출력됩니다.  
+
+:::info
+Additive 로딩에서는 **활성 씬당 하나**를 권장하고,  
+나가는 씬에 **`SceneExitPolicy.Preserve`** 를 쓰는 패턴도 메시지에 안내됩니다.
+:::
+
+---
+
+## `Awake`와 초기 레지스트리
+
+- `_instance` 갱신 후, **`_sceneRegistry`가 비어 있고 `_sceneReferrals`에 항목이 있으면** `RebuildSceneRegistry()`를 호출합니다.
+
+- 베이크 리스트가 비어 있으면 여기서는 아무 것도 채우지 않으므로, 플레이 전 **Refresh Scene Registry**가 필요합니다.
+
+---
+
+## 레지스트리·Safety Net
+
+- 소스 데이터는 **`_sceneReferrals`**; 런타임 맵은 **`_sceneRegistry`** (`RegistryKey` → `Component`).
+
+- `RebuildSceneRegistry()` 시 Safety Net이 **정비**됩니다.
+
+- `Resolve` 미스 시 **1회** `RebuildSceneRegistryCore()` 재시도 패턴은 전역과 동일합니다.
+
+---
+
+## `Create<T>()`
+
+씬 스코프에서 순수 C# 인스턴스를 만들 때 Component 의존성 해석 순서 : 
+
+1. **씬** — `SceneInstaller.Resolve(type, id)`
+
+2. 없으면 **전역** — `MasterInstaller.Instance`가 있을 때 `Resolve(type, id)`
+
+전역 `Create<T>()`와 **순서가 반대**이므로, “씬이 전역을 덮어쓰는지 / 전역이 기본인지” 를 헷갈리지 않도록 설계해야 합니다.
+
+---
+
+## 틱
+
+씬 오브젝트 수명에 묶인 **`Update`/`FixedUpdate`/`LateUpdate`** 에서 `TickableRegistry`를 돌립니다.  
+**`SceneExitPolicy`와 무관하게** `OnDestroy`에서 틱 레지스트리는 정리됩니다. 씬 파괴 뒤에도 틱이 도는 것을 막기 위함입니다.
+
+---
+
+## `OnDestroy`와 `SceneExitPolicy`
+
+- **`Clear`(기본)** — `_sceneRegistry`, `_sceneReferrals`, `_ownershipMap`을 비웁니다.
+
+- **`Preserve`** — **`_sceneRegistry`는 유지**, `_ownershipMap`과 `_sceneReferrals`는 비웁니다.  
+Additive 전환 직후에도 **이전 씬에서 등록된 항목을 잠시 참조**할 수 있게 하려는 옵션입니다.
+
+자세한 분기는 [SceneExitPolicy](/scoping/scene-exit-policy)를 참고하세요.
+
+---
+
+## 에디터 `RefreshSceneRegistry`
+
+**현재 `gameObject.scene`** 안의 컴포넌트만 스캔해 `[SceneReferral]`을 모읍니다. 중복 키는 첫 항목만 유지합니다.
+
+```csharp
+// 씬 매니저 조회
+var wave = SceneInstaller.Instance.ResolveAs<IWaveService>();
+
+// 씬 전용 Named
+var left = SceneInstaller.Instance.ResolveAs<ICameraRig>("left");
+```

@@ -1,0 +1,66 @@
+﻿---
+title: 실행 순서
+sidebar_label: 실행 순서
+description: "DefaultExecutionOrder -1000/-900/-500, Awake와 주입"
+---
+
+# 실행 순서 (`DefaultExecutionOrder`)
+
+:::note
+중요한 부분입니다.
+:::
+세 Installer에는 Unity **`[DefaultExecutionOrder]`** 가 붙어 있어, **같은 프레임 `Awake`에서** 대체로 아래 순서로 실행됩니다.
+
+| 값 | 타입 |
+|----|------|
+| **-1000** | `MasterInstaller` |
+| **-900** | `SceneInstaller` |
+| **-500** | `ObjectInstaller` |
+
+숫자가 **작을수록 먼저** 실행됩니다. (더한 음수일 수록)
+
+---
+
+## `Awake`에서 무엇이 일어나는지
+
+1. **`MasterInstaller`** — 싱글톤 확정, 필요 시 **`RebuildRuntimeRegistry()`** 로 전역 맵 구성.
+
+2. **`SceneInstaller`** — 정적 `Instance` 갱신, 베이크 리스트가 있으면 **`RebuildSceneRegistry()`** .
+
+3. **`ObjectInstaller`** — **`InjectGlobalDependencies()`** 로 자식들에 **`TryInjectTarget`** (씬 필드 → 전역 필드).
+
+그 결과 **일반 `MonoBehaviour`의 `Awake`(-500보다 늦은 기본 순서)** 보다 앞서,  
+매니저 레지스트리와 로컬 트리 주입이 준비되는 경우가 많습니다. (**DOTS를 요구하지 않을 정도의 규모를 기준으로 삼습니다.**)
+
+---
+
+## 다른 스크립트와 섞일 때
+
+- 커스텀으로 **`DefaultExecutionOrder`를 -2000 등 더 앞으로 당기면** Installer보다 먼저 `Awake`가 돌 수 있습니다.  
+그 코드에서 **`MasterInstaller.Instance.Resolve`** 를 호출하면 맵이 아직 비어 있을 수 있으므로 주의하십시오.
+
+- 반대로 Installer보다 **뒤**에만 두면, `Awake`에서 전역·씬 주입이 끝난 뒤에 실행됩니다.
+
+:::danger
+**Exctue Order** 레벨을 **UNInject가 지원하는 시점의 전방으로 설정하지 마십시오**.  
+이는 **일반 로직 개발 환경에서도 좋은 선택지가 아닙니다**.
+:::
+---
+
+## 틱 순서
+
+`Update`/`FixedUpdate`/`LateUpdate`는 Unity 기본 규칙 + 컴포넌트 순서에 따릅니다.  
+**`ITickable` 위임**은 각 Installer 자신의 해당 메서드에서 호출되므로,  
+**같은 프레임 안에서** 일반 `MonoBehaviour.Update`와의 선후는 프로젝트 설정에 따라 달라질 수 있습니다.
+
+---
+
+## 부트스트랩 타이밍
+
+`MasterInstaller`는 **`RuntimeInitializeLoadType.BeforeSceneLoad`** 에서도 한 번 돌아,  
+씬 `Awake`보다 **더 이른** 시점에 인스턴스·`DontDestroyOnLoad`·초기 `RebuildRuntimeRegistry`가 잡힐 수 있습니다.
+
+```csharp
+// 매니저 Awake 이후에만 Resolve가 안전하다고 가정하지 말고,
+// BeforeSceneLoad 이후에는 Instance와 맵이 이미 있을 수 있음
+```

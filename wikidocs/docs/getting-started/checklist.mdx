@@ -1,0 +1,168 @@
+﻿---
+title: 체크리스트
+sidebar_label: 체크리스트
+description: "플레이·빌드 전에 확인할 UNInject 환경, 레지스트리 베이크, partial, 검증 도구"
+---
+
+# 체크리스트
+
+씬에 Installer를 올린 뒤에도 **Resolve가 실패**하거나, 플레이 직전 **경고가 연달아** 뜨는 경우가 많습니다.  
+아래는 패키지 소스 기준으로 정리한 **실무 점검 순서**입니다. 세부 설치 요구는 [설치 및 환경 요구사항](/getting-started/installation)을 참고하세요.
+
+---
+
+## 환경·패키지
+
+- [x] **Unity** 버전이 패키지 메타와 호환되는가? (예: `2021.3 LTS` 이상 — 프로젝트)
+
+- [x] **패키지**가 프로젝트에 포함되어 있는가? (`Packages/manifest.json` 또는 `Assets` 아래 임베드)
+
+- [x] **스크립팅 백엔드** Mono/IL2CPP 중 배포 타깃이 IL2CPP라면, `partial` + 소스 제너레이터 경로를 유지하는가? 
+
+---
+
+## 씬에 반드시 있어야 할 것
+
+- [x] **전역(게임 전체) 매니저**를 쓸 계획이라면 **`MasterInstaller`** 가 존재하는가?  
+  - 씬에 배치하거나, `Resources`에 `MasterInstaller` 프리팹이 있다면, **부트스트랩이 자동으로 인스턴스를 띄웁니다.** 
+  - 소스: `MasterInstaller.Bootstrap()` — `Resources.Load<MasterInstaller>("MasterInstaller")` 후 `DontDestroyOnLoad`.
+
+```csharp
+// 런타임에서 전역 인스턴스 조회 (없으면 경고 로그 후 null 가능)
+var master = MasterInstaller.Instance;
+```
+
+- [x] **씬 한정 매니저**(`[SceneReferral]`)를 쓸 계획이라면 **`SceneInstaller`** 가 해당 씬에 하나인가?  
+  - Additive 로딩 시 **활성 씬당 SceneInstaller는 하나**를 권장합니다. 중복 시 이전 인스턴스가 경고와 함께 교체됩니다.
+
+```csharp
+// 씬 스코프 싱글톤 (해당 씬에 SceneInstaller가 있을 때)
+var sceneScope = SceneInstaller.Instance;
+```
+
+- [x] **서브트리 로컬 주입**(`[Inject]` / `[GlobalInject]` / `[SceneInject]`)을 쓴다면, 해당 **루트에 `ObjectInstaller`** 가 포함되었나?
+
+---
+
+## Manager 등록·베이크 (가장 흔한 누락)
+
+런타임에는 씬 전체를 스캔하지 않고,  
+**에디터에서 채운 직렬화 리스트**(`_globalReferrals`, `_sceneReferrals`)로 딕셔너리를 구성합니다.
+
+- [x] 전역 매니저 타입에 **`[Referral]`** (필요 시 `BindType`, Named **`Id`**)가 붙어 있는가?
+
+- [x] 씬 매니저 타입에 **`[SceneReferral]`** 가 붙어 있는가?
+
+- [x] **`MasterInstaller`에서 `Refresh Global Registry`** 를 실행했는가?  
+  - 인스펙터 컨텍스트 메뉴: **Refresh Global Registry** (`MasterInstaller.RefreshRegistry()`).
+
+- [x] **`SceneInstaller`에서 `Refresh Scene Registry`** 를 실행했는가?  
+  - 컨텍스트 메뉴: **Refresh Scene Registry** (`SceneInstaller.RefreshSceneRegistry()`).
+
+- [x] `ObjectInstaller`가 있는 프리팹/오브젝트에서 **`Bake Dependencies`** 를 눌러 `[Inject]` 필드가 채워졌는가?  
+  - 에디터 버튼 문구: **Bake Dependencies** (`ObjectInstaller.BakeDependencies()`).
+
+:::tip
+`ObjectInstaller` 커스텀 인스펙터에는 **Refresh Global Registry** / **Refresh Scene Registry** 단축 버튼도 있습니다.  
+씬을 고친 뒤에는 습관적으로 한 번씩 눌러 주세요.
+:::
+
+### 플레이 모드 가드
+
+에디터 전용 **`MasterInstallerPlayModeGuard`** 는,  
+플레이 진입 직전(`ExitingEditMode`)에 씬에 `MasterInstaller`가 있는데 **`_globalReferrals` 배열이 비어 있으면** 경고를 냅니다.
+
+- [x] 콘솔 - `[MasterInstaller] Global registry is empty... 중략` 경고 로그가 없는가?
+
+이 동작은 `MasterInstallerPlayModeGuard` (`UNInject.Editor`)에 구현되어 있습니다.
+
+---
+
+## partial·Roslyn (폴백 경고)
+
+**`UNInjectFallbackGuard`** 는 플레이 직전에 다음을 검사합니다.
+
+- `[GlobalInject]` / `[SceneInject]` 필드를 쓰는 타입이 **`partial class`가 아니면**  
+Expression Tree 폴백으로 동작한다는 **경고**를 모읍니다.
+- IL2CPP에서는 폴백이 **`FieldInfo.SetValue`까지 내려갈 수 있음**을 경고 본문에서 안내합니다.
+
+- [x] 주입 필드가 있는 MonoBehaviour는 **`public partial class ...`** 인가?
+
+```csharp
+// 권장: 소스 제너레이터가 생성한 partial과 한 쌍
+public partial class PlayerView : MonoBehaviour
+{
+    [GlobalInject] private IAudioService _audio;
+}
+```
+
+---
+
+## 빌드·검증 메뉴
+
+- [x] **`Window > UNInject > Validate Bake`** 로 누락된 등록이 없는가?
+  - `UNInjectBakeValidator`: 빌드 전처리 시에도 동일 검증.  
+  필수 `[GlobalInject]` / `[SceneInject]`와 베이크된 레지스트리를 교차 확인합니다.
+
+- [x] CI 빌드를 막고 싶다면 스크립팅 심볼 **`UNINJECT_STRICT_BUILD`** 를 정의해, 검증 실패 시 `BuildFailedException`이 유발되는가?
+
+---
+
+## 실행 순서 (Awake 순서 감각)
+
+`DefaultExecutionOrder` :
+
+| 컴포넌트 | 순서 | 비고 |
+|----------|------|------|
+| `MasterInstaller` | `-1000` | 전역 레지스트리가 먼저 준비되는 쪽에 가깝게 |
+| `SceneInstaller` | `-900` | 씬 스코프 |
+| `ObjectInstaller` | `-500` | 자식에 `Global`/`Scene` 주입은 `Awake`에서 수행 |
+
+- [x] 같은 프레임에 매니저가 먼저 깨어나야 하는 구조라면, **커스텀 `DefaultExecutionOrder`와 충돌**하지 않는가?
+
+---
+
+## 빠른 스모크 (선택)
+
+플레이 전 코드로 “전역 인스턴스만” 확인할 때 예시입니다. (실제 Resolve는 매니저 타입에 맞게 호출하세요.)
+
+```csharp
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityEngine;
+
+public static class UninjectSmokeMenu
+{
+    [MenuItem("Tools/UNInject/Smoke — Instances")]
+    public static void SmokeInstances()
+    {
+        var m = Object.FindObjectOfType<MasterInstaller>();
+        var s = Object.FindObjectOfType<SceneInstaller>();
+        Debug.Log($"MasterInstaller: {(m != null ? m.name : "null")}");
+        Debug.Log($"SceneInstaller: {(s != null ? s.name : "null")}");
+    }
+}
+#endif
+```
+
+---
+
+## 참고 이미지 (Inspector Details)
+
+**각 Domain을 가진 Installer Component**들의 Inspector 외형 및 **수동 Bake Up**.
+
+<div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
+  <div style={{ textAlign: 'center' }}>
+    <img src="/img/getting-started/masterrefresh.png" width="300" />
+    <div>Master Installer</div>
+  </div>
+  <div style={{ textAlign: 'center' }}>
+    <img src="/img/getting-started/scenerefresh.png" width="300" />
+    <div>Scene Installer</div>
+  </div>
+  <div style={{ textAlign: 'center' }}>
+    <img src="/img/getting-started/bake.png" width="300" />
+    <div>Object Installer   
+    **주입 필드가 존재하는 오브젝트 중 일부 루트**</div>
+  </div>
+</div>
