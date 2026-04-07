@@ -5,6 +5,7 @@
 ![](https://img.shields.io/badge/license-MIT-blue)
 ![](https://img.shields.io/badge/IL2CPP-supported-brightgreen)
 ![](https://img.shields.io/badge/[A.O.T]-supported-brightgreen)
+[![Wiki](https://img.shields.io/badge/📖%20Wiki-blue?style=for-the-badge)](https://nightwish-0827.github.io/UNInject/)
 
 > **UNInject** is a dependency injection framework for Unity built on **editor-time baking**, **Roslyn source generation**, and **three-tier scoping** with a **runtime path that avoids reflection** when types are declared `partial`.
 
