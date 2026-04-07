@@ -69,24 +69,11 @@ const PerformGraph = () => {
   useEffect(() => {
     buildChart();
 
-    // Chart.js responsive:true 가 내부 ResizeObserver를 통해 canvas를 리사이즈함.
-    // 외부에서 추가 ResizeObserver로 destroy/rebuild 하면 크기 변화가 재귀 트리거됨.
-    // → window resize 이벤트 + rAF 디바운스로 대체 (루프 없음)
-    let rafId = null;
-    const onResize = () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        // destroy 없이 chart.resize()만 호출 → DOM 크기 재측정 후 재드로우
-        chartInstance.current?.resize();
-        rafId = null;
-      });
-    };
-
-    window.addEventListener('resize', onResize, { passive: true });
-
+    // Chart.js responsive:true 가 내부 ResizeObserver로 canvas 크기를 관리함.
+    // 외부에서 추가로 resize/chart.resize()를 호출하면 두 경로가 경쟁하며
+    // 레이아웃 재계산이 연속 트리거되어 미세한 떨림이 발생함.
+    // → 외부 핸들러 없이 Chart.js 내장 ResizeObserver에만 위임.
     return () => {
-      window.removeEventListener('resize', onResize);
-      if (rafId) cancelAnimationFrame(rafId);
       chartInstance.current?.destroy();
       chartInstance.current = null;
     };
@@ -114,14 +101,15 @@ const PerformGraph = () => {
           align-items: center;
         }
 
-        /* radar-box: 고정 height 제거 → aspectRatio로 자연스럽게 */
+        /* radar-box: Chart.js가 canvas 크기를 직접 관리하므로 CSS override 제거.
+           aspect-ratio로 컨테이너 높이를 확보해 레이아웃 재계산 루프 방지. */
         .radar-box {
           position: relative;
           width: 100%;
+          aspect-ratio: 1.4 / 1;
         }
         .radar-box canvas {
-          width: 100% !important;
-          height: auto !important;
+          display: block;
         }
 
         .score-summary { display: flex; flex-direction: column; gap: 15px; }
