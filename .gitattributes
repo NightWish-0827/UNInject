@@ -1,0 +1,5 @@
+# C#만 카운트
+*.cs linguist-detectable=true
+
+# 나머지 전부 제외
+* linguist-vendored
