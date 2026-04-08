@@ -1,5 +1,5 @@
-# 기본은 제외
-* linguist-vendored
+# C#만 카운트
+*.cs linguist-detectable=true
 
-# C#만 다시 포함
-*.cs linguist-vendored=false
+# 나머지 전부 제외
+* linguist-vendored
