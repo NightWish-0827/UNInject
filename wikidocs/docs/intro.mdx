@@ -9,18 +9,21 @@ slug: /
 
 ## Unity + Inject = UNInject 
 
-Pure C#에 Unity를 맞춘 아키텍쳐가 아닌, **MonoBehaviour가 통제권을 갖도록 하는 D.I 솔루션** 입니다.  
-기존 **D.I 솔루션**들의 퍼포먼스를 유지하면서도, **Mono**가 가진 특수성을 활용하기 위해 고안되었습니다.
+Pure C#에 D.I에 Unity를 맞춘 아키텍쳐가 아닌, **MonoBehaviour가 통제권을 갖도록 하는 Unity만을 위한 D.I 솔루션** 입니다.  
+
+기존 **D.I 솔루션**들의 퍼포먼스를 유지하면서도, **MonoBehaviour**가 가진 특수성을 유용하게 활용하기 위해 고안되었습니다.   
+
+---
 
 - **고속 주입** : **VContainer**와 동일한 Roslyn Code Gen을 활용한 **상수 복잡도 O(1) 주입 지원**.  
 
-- **Top Tier GC Alloc** : **Resolve** (Getter) 의 비용을 **자동으로 제거**합니다. 
+- **GC Alloc Performance** : 필드의 **Resolve** (Getter) 의 비용을 **Roslyn Setter Inject가 대신 자동으로 제거**합니다. 
 
-- **엄청난 학습곡선 (Positive)** : **매우. 매우 쉬운 학습 곡선을 자랑합니다.** 따라서 후반 도입이 고려가 가능합니다.
+- **엄청난 학습곡선 (Positive)** : **매우. 매우 쉬운 학습 곡선을 자랑합니다.** PR이 구조적으로 빠릅니다.
 
 - **직관적인 코드 패턴** : Unity의 생명주기에 맞춘, **직관적이고**, **높은 사용성**을 보장합니다. 
 
-- **3 Tier LifeCycle** : 유니티 엔진에서 최적화된, 각 용도에 알맞은 **세 가지 Scope 계층을 제공**합니다.
+- **3 Tier LifeCycle** : Unity 엔진에서 최적화된, 각 용도에 알맞은 **세 가지 Scope 계층을 제공**합니다.
 
 ---
 
