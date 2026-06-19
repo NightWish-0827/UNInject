@@ -75,7 +75,6 @@ export default function PerformGraph() {
           opacity: 0;
           pointer-events: none;
           transition: opacity 0.22s ease;
-          backdrop-filter: blur(5px);
         }
         .pg-modal.pg-open {
           opacity: 1;
