@@ -329,7 +329,8 @@ Benchmark comparing Zenject (Reflection), VContainer (Expression Tree), and UNIn
 - Conditions: 30 iterations, averaged
 - Measurement: 100,000 injections (after JIT warmup)
 
-[Image #1]
+<img width="565" height="415" alt="benched" src="https://github.com/user-attachments/assets/35095e54-4b58-43ce-8af7-8452e48410cf" />  
+
 
 | Path | Cold Start (ms/call) | Hot 100,000× (ms total) |
 |------|---------------------|------------------------|
